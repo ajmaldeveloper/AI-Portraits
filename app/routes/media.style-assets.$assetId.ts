@@ -1,4 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
+import sharp from "sharp";
 
 import { verifySignedStyleAssetRequest } from "../services/media/media-signing.server";
 import { getStyleAssetBinary } from "../services/styles/style-product-media.server";
@@ -18,6 +19,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   const expiresRaw = url.searchParams.get("expires");
 
+  const scaleRaw = url.searchParams.get("scale");
+
   const signature = url.searchParams.get("signature");
 
   if (!shop || !expiresRaw || !signature) {
@@ -28,10 +31,16 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   const expires = Number(expiresRaw);
 
+  // Absent scale means "full resolution" for URLs signed before sizing
+  // existed — verifySignedStyleAssetRequest still requires whatever
+  // value is checked here to match what was actually signed.
+  const scale = scaleRaw === null ? 100 : Number(scaleRaw);
+
   const valid = verifySignedStyleAssetRequest({
     assetId,
     shop,
     expires,
+    scale,
     signature,
   });
 
@@ -49,23 +58,42 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     });
   }
 
-  /*
-   * getStyleAssetBinary returns a non-null, ArrayBuffer-backed
-   * Uint8Array. Use the underlying sliced ArrayBuffer as the Response
-   * body to avoid typed-array generic differences in TypeScript 5.9.
-   */
-  const body = asset.binaryData.buffer.slice(
-    asset.binaryData.byteOffset,
-    asset.binaryData.byteOffset + asset.binaryData.byteLength,
-  );
+  const contentType = asset.mimeType || "application/octet-stream";
 
-  return new Response(body, {
-    headers: {
-      "Content-Type": asset.mimeType || "application/octet-stream",
+  // Content is deterministic per assetId+scale — assets are never
+  // mutated after creation (only created/deleted) — so this is safe to
+  // cache aggressively. The URL is already HMAC-signed, so caching
+  // publicly doesn't leak anything a bearer of the URL couldn't already
+  // fetch directly.
+  const headers = {
+    "Content-Type": contentType,
+    "Cache-Control": "public, max-age=31536000, immutable",
+    "X-Content-Type-Options": "nosniff",
+  };
 
-      "Cache-Control": "private, max-age=300",
+  if (scale >= 100 || !contentType.startsWith("image/")) {
+    /*
+     * getStyleAssetBinary returns a non-null, ArrayBuffer-backed
+     * Uint8Array. Use the underlying sliced ArrayBuffer as the Response
+     * body to avoid typed-array generic differences in TypeScript 5.9.
+     */
+    const body = asset.binaryData.buffer.slice(
+      asset.binaryData.byteOffset,
+      asset.binaryData.byteOffset + asset.binaryData.byteLength,
+    );
 
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+    return new Response(body, { headers });
+  }
+
+  const image = sharp(asset.binaryData);
+
+  const metadata = await image.metadata();
+
+  const nativeWidth = metadata.width ?? 0;
+
+  const targetWidth = Math.max(1, Math.round((nativeWidth * scale) / 100));
+
+  const resized = await image.resize({ width: targetWidth }).toBuffer();
+
+  return new Response(resized, { headers });
 };

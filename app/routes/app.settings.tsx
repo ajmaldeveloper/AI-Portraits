@@ -26,6 +26,11 @@ import {
   getGenerationDefaults,
   saveGenerationDefaults,
 } from "../services/settings/generation-defaults.server";
+import {
+  type SaveSizeOptionInput,
+  getSizeOptions,
+  saveSizeOptions,
+} from "../services/settings/size-options.server";
 import { authenticate } from "../shopify.server";
 import { eventValue } from "../utils/event-value";
 import { formatDate } from "../utils/format-date";
@@ -33,9 +38,10 @@ import { formatDate } from "../utils/format-date";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
 
-  const [summary, generationDefaults] = await Promise.all([
+  const [summary, generationDefaults, sizeOptions] = await Promise.all([
     getAIProviderSettingsSummary(session.shop),
     getGenerationDefaults(session.shop),
+    getSizeOptions(session.shop),
   ]);
 
   const url = new URL(request.url);
@@ -55,11 +61,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
     qualityOptions: QUALITY_OPTIONS,
 
+    sizeOptions,
+
     saved: url.searchParams.get("saved") === "1",
 
     removed: url.searchParams.get("removed") === "1",
 
     defaultsSaved: url.searchParams.get("defaultsSaved") === "1",
+
+    sizesSaved: url.searchParams.get("sizesSaved") === "1",
   };
 };
 
@@ -81,6 +91,55 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           error instanceof Error
             ? error.message
             : "Could not remove the AI provider.",
+      };
+    }
+  }
+
+  if (intent === "saveSizes") {
+    let parsed: unknown;
+
+    try {
+      parsed = JSON.parse(String(formData.get("sizesJson") ?? "[]"));
+    } catch {
+      return { error: "Could not read the submitted print sizes." };
+    }
+
+    if (!Array.isArray(parsed)) {
+      return { error: "Could not read the submitted print sizes." };
+    }
+
+    const inputs: SaveSizeOptionInput[] = parsed.map((entry) => {
+      const row = (entry ?? {}) as Record<string, unknown>;
+
+      // "default-*" ids come from the built-in Small/Medium/Large
+      // default (see size-options.server.ts); "new-*" ids are rows
+      // added client-side this session. Neither is a real saved row —
+      // dropping the id here makes saveSizeOptions create them fresh.
+      const id =
+        typeof row.id === "string" &&
+        !row.id.startsWith("default-") &&
+        !row.id.startsWith("new-")
+          ? row.id
+          : undefined;
+
+      return {
+        id,
+        label: String(row.label ?? ""),
+        scalePercent: Number(row.scalePercent),
+        priceDelta: String(row.priceDelta ?? "0"),
+      };
+    });
+
+    try {
+      await saveSizeOptions(session.shop, inputs);
+
+      return redirect("/app/settings?sizesSaved=1");
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not save print sizes.",
       };
     }
   }
@@ -213,9 +272,11 @@ export default function AppSettings() {
     generationDefaults,
     aspectRatioOptions,
     qualityOptions,
+    sizeOptions,
     saved,
     removed,
     defaultsSaved,
+    sizesSaved,
   } = useLoaderData<typeof loader>();
 
   const actionData = useActionData<typeof action>();
@@ -262,6 +323,59 @@ export default function AppSettings() {
   const removing = submittingIntent === "remove";
 
   const savingDefaults = submittingIntent === "saveDefaults";
+
+  const savingSizes = submittingIntent === "saveSizes";
+
+  type SizeRow = {
+    id: string;
+    label: string;
+    scalePercent: string;
+    priceDelta: string;
+  };
+
+  const [sizeRows, setSizeRows] = useState<SizeRow[]>(() =>
+    sizeOptions.map((option) => ({
+      id: option.id,
+      label: option.label,
+      scalePercent: String(option.scalePercent),
+      priceDelta: option.priceDelta,
+    })),
+  );
+
+  const sizesDirty =
+    JSON.stringify(sizeRows) !==
+    JSON.stringify(
+      sizeOptions.map((option) => ({
+        id: option.id,
+        label: option.label,
+        scalePercent: String(option.scalePercent),
+        priceDelta: option.priceDelta,
+      })),
+    );
+
+  const updateSizeRow = (index: number, patch: Partial<SizeRow>) => {
+    setSizeRows((rows) =>
+      rows.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, ...patch } : row,
+      ),
+    );
+  };
+
+  const addSizeRow = () => {
+    setSizeRows((rows) => [
+      ...rows,
+      {
+        id: `new-${Date.now()}`,
+        label: "",
+        scalePercent: "100",
+        priceDelta: "0",
+      },
+    ]);
+  };
+
+  const removeSizeRow = (index: number) => {
+    setSizeRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index));
+  };
 
   const [defaultAspectRatio, setDefaultAspectRatio] = useState(
     generationDefaults.outputAspectRatio,
@@ -314,6 +428,17 @@ export default function AppSettings() {
     window.history.replaceState(null, "", "/app/settings");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultsSaved, shopify]);
+
+  useEffect(() => {
+    if (!sizesSaved) {
+      return;
+    }
+
+    shopify.toast.show("Print sizes saved");
+
+    window.history.replaceState(null, "", "/app/settings");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sizesSaved, shopify]);
 
   const formFieldsProps: ProviderFormFieldsProps = {
     providers,
@@ -481,6 +606,100 @@ export default function AppSettings() {
                   variant="primary"
                   loading={savingDefaults}
                   disabled={!defaultsDirty || savingDefaults}
+                >
+                  Save
+                </s-button>
+              </s-stack>
+            </s-stack>
+          </Form>
+        </s-section>
+
+        <s-section heading="Print sizes">
+          <Form method="post">
+            <input type="hidden" name="intent" value="saveSizes" />
+            <input type="hidden" name="sizesJson" value={JSON.stringify(sizeRows)} />
+
+            <s-stack direction="block" gap="base">
+              <s-paragraph>
+                Offered as size variants on every published product. Scale is
+                a percentage of the AI's original output — 100% is the
+                original resolution; anything lower is resized down, never
+                up, so nothing looks soft. Price adjustment is added to a
+                prompt's base price for that size. Changes here apply the
+                next time you publish or update each prompt — already-live
+                products keep their current variants until then.
+              </s-paragraph>
+
+              <s-stack direction="block" gap="small">
+                {sizeRows.map((row, index) => (
+                  <s-query-container key={row.id}>
+                    <s-grid
+                      gridTemplateColumns="@container (inline-size > 560px) 2fr 1fr 1fr auto, 1fr"
+                      gap="small"
+                      alignItems="end"
+                    >
+                      <s-text-field
+                        label="Name"
+                        value={row.label}
+                        onInput={(event: Event) =>
+                          updateSizeRow(index, { label: eventValue(event) })
+                        }
+                        placeholder="e.g. Medium"
+                        autocomplete="off"
+                      />
+
+                      <s-number-field
+                        label="Scale %"
+                        value={row.scalePercent}
+                        onInput={(event: Event) =>
+                          updateSizeRow(index, {
+                            scalePercent: eventValue(event),
+                          })
+                        }
+                        min={1}
+                        max={100}
+                        step={1}
+                        autocomplete="off"
+                      />
+
+                      <s-number-field
+                        label="Price adjustment"
+                        value={row.priceDelta}
+                        onInput={(event: Event) =>
+                          updateSizeRow(index, {
+                            priceDelta: eventValue(event),
+                          })
+                        }
+                        step={0.01}
+                        autocomplete="off"
+                      />
+
+                      <s-button
+                        variant="tertiary"
+                        tone="critical"
+                        disabled={sizeRows.length <= 1}
+                        onClick={() => removeSizeRow(index)}
+                        accessibilityLabel={`Remove ${row.label || "this size"}`}
+                      >
+                        Remove
+                      </s-button>
+                    </s-grid>
+                  </s-query-container>
+                ))}
+              </s-stack>
+
+              <s-stack direction="inline" gap="base">
+                <s-button variant="secondary" onClick={addSizeRow}>
+                  Add size
+                </s-button>
+              </s-stack>
+
+              <s-stack direction="inline" gap="base">
+                <s-button
+                  type="submit"
+                  variant="primary"
+                  loading={savingSizes}
+                  disabled={!sizesDirty || savingSizes}
                 >
                   Save
                 </s-button>

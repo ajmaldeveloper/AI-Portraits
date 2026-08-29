@@ -286,6 +286,7 @@ export type CustomerGenerationStatus = {
   status: GenerationStatus;
   errorMessage: string | null;
   resultAssetId: string | null;
+  styleId: string;
 };
 
 export async function getCustomerGenerationStatus(
@@ -302,6 +303,7 @@ export async function getCustomerGenerationStatus(
     select: {
       status: true,
       errorMessage: true,
+      styleId: true,
 
       assets: {
         where: {
@@ -325,5 +327,6 @@ export async function getCustomerGenerationStatus(
     status: generation.status,
     errorMessage: generation.errorMessage,
     resultAssetId: generation.assets[0]?.id ?? null,
+    styleId: generation.styleId,
   };
 }

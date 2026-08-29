@@ -253,6 +253,31 @@ model ShopGenerationDefaults {
   updatedAt DateTime @updatedAt
 }
 
+// Shop-wide list of print/download sizes offered on every published
+// product (Small/Medium/Large-style). scalePercent is applied against
+// the AI's native output resolution at serve time (see
+// media.style-assets.$assetId.ts) — 100 means the untouched original
+// bytes, anything lower is downscaled on read. priceDelta is added to
+// a Style's basePrice for that size's variant. id is the stable key
+// Style.productSettings.sizeVariants matches against on republish, so
+// renaming a label later renames the existing Shopify variant instead
+// of deleting and recreating it.
+model ShopSizeOption {
+  id String @id @default(cuid())
+
+  shop String
+
+  label        String
+  scalePercent Int
+  priceDelta   Decimal @default(0)
+  position     Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shop, position])
+}
+
 // Shopify's standard offline/online session model remains independent from
 // merchant-created AI styles. No Shopify product is created when a Style
 // record is created. Product creation happens only during Publish.

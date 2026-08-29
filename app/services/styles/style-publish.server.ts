@@ -5,6 +5,7 @@ import { authenticate } from "../../shopify.server";
 import { assertCanPublishStyle } from "../billing/billing.server";
 import { createSignedStyleAssetUrl } from "../media/media-signing.server";
 import { findOnlineStorePublicationId } from "../shopify/publications.server";
+import { getSizeOptions } from "../settings/size-options.server";
 import { requireStyleForShop } from "./style.server";
 import {
   isStylePublishReady,
@@ -85,7 +86,10 @@ type ProductSetResponse = {
         id: string;
         handle: string;
         variants: {
-          nodes: Array<{ id: string }>;
+          nodes: Array<{
+            id: string;
+            selectedOptions: Array<{ name: string; value: string }>;
+          }>;
         };
         media: {
           nodes: Array<{ id: string }>;
@@ -106,9 +110,13 @@ const PRODUCT_SET_MUTATION = `#graphql
       product {
         id
         handle
-        variants(first: 1) {
+        variants(first: 25) {
           nodes {
             id
+            selectedOptions {
+              name
+              value
+            }
           }
         }
         media(first: 50, sortKey: POSITION) {
@@ -125,10 +133,56 @@ const PRODUCT_SET_MUTATION = `#graphql
   }
 `;
 
+// Persisted in Style.productSettings.sizeVariants. Keyed by
+// sizeOptionId (the ShopSizeOption's stable id), not by label — so
+// renaming a size in Settings renames the existing Shopify variant on
+// next republish instead of deleting and recreating it (which would
+// break any cart/checkout already holding the old variant id).
+export type SizeVariantMapping = {
+  sizeOptionId: string;
+  variantId: string;
+  numericVariantId: string;
+  label: string;
+  scalePercent: number;
+};
+
+function numericIdFromGid(gid: string): string {
+  const segments = gid.split("/");
+
+  return segments[segments.length - 1] ?? gid;
+}
+
+/**
+ * Reads back the sizeVariants a previous publish stored in
+ * Style.productSettings — used by the app-proxy routes to tell the
+ * storefront which Shopify variant id maps to which print size, and to
+ * build a signed result-image URL per size.
+ */
+export function parseSizeVariants(productSettings: unknown): SizeVariantMapping[] {
+  if (typeof productSettings !== "object" || productSettings === null) {
+    return [];
+  }
+
+  const sizeVariants = (productSettings as Record<string, unknown>).sizeVariants;
+
+  if (!Array.isArray(sizeVariants)) {
+    return [];
+  }
+
+  return sizeVariants.filter(
+    (entry): entry is SizeVariantMapping =>
+      typeof entry === "object" &&
+      entry !== null &&
+      typeof (entry as SizeVariantMapping).numericVariantId === "string" &&
+      typeof (entry as SizeVariantMapping).label === "string" &&
+      typeof (entry as SizeVariantMapping).scalePercent === "number",
+  );
+}
+
 type UpsertResult = {
   productId: string;
   handle: string;
-  variantId: string | null;
+  sizeVariants: SizeVariantMapping[];
   mediaAssignments: Array<{ assetId: string; shopifyMediaId: string }>;
 };
 
@@ -146,6 +200,22 @@ async function upsertShopifyProduct(
 
   const productSettings = jsonObject(style.productSettings);
 
+  const sizeOptions = await getSizeOptions(style.shop);
+
+  const existingSizeVariants = Array.isArray(productSettings.sizeVariants)
+    ? (productSettings.sizeVariants as unknown[]).filter(
+        (entry): entry is SizeVariantMapping =>
+          typeof entry === "object" &&
+          entry !== null &&
+          typeof (entry as SizeVariantMapping).sizeOptionId === "string" &&
+          typeof (entry as SizeVariantMapping).variantId === "string",
+      )
+    : [];
+
+  const existingVariantIdBySizeOption = new Map(
+    existingSizeVariants.map((entry) => [entry.sizeOptionId, entry.variantId]),
+  );
+
   // Already-attached assets are normally referenced by their known
   // Shopify media ID (kept as-is), and new ones submitted by URL —
   // except when recreating the product from scratch (see below), where
@@ -156,12 +226,6 @@ async function upsertShopifyProduct(
     forceRecreate: boolean;
     forceReuploadMedia?: boolean;
   }) {
-    const existingVariantId =
-      !options.forceRecreate &&
-      typeof productSettings.defaultVariantId === "string"
-        ? productSettings.defaultVariantId
-        : null;
-
     const reuploadMedia = options.forceRecreate || options.forceReuploadMedia;
 
     const knownAssets = reuploadMedia
@@ -208,29 +272,41 @@ async function upsertShopifyProduct(
         },
       ],
 
-      // This app never exposes real product options (size/color/etc.) —
-      // every Style publishes as a single-variant product. Shopify's
-      // productSet still requires an explicit option and matching
-      // optionValues per variant even for that simple case (it no
-      // longer defaults these itself), using its own "Title"/"Default
-      // Title" convention for options-less products.
+      // One "Size" option per shop-wide ShopSizeOption — every Style
+      // publishes with the shop's configured print sizes as real
+      // variants (see getSizeOptions; it always returns at least a
+      // built-in Small/Medium/Large default, so this never falls back
+      // to a single-variant product).
       productOptions: [
         {
-          name: "Title",
-          values: [{ name: "Default Title" }],
+          name: "Size",
+          values: sizeOptions.map((option) => ({ name: option.label })),
         },
       ],
 
-      variants: [
-        {
+      variants: sizeOptions.map((option) => {
+        const existingVariantId = options.forceRecreate
+          ? null
+          : (existingVariantIdBySizeOption.get(option.id) ?? null);
+
+        const priceDelta = Number(option.priceDelta) || 0;
+
+        const price = (Number(style.basePrice) + priceDelta).toFixed(2);
+
+        const compareAtPrice = style.compareAtPrice
+          ? (Number(style.compareAtPrice) + priceDelta).toFixed(2)
+          : null;
+
+        return {
           ...(existingVariantId ? { id: existingVariantId } : {}),
-          price: style.basePrice.toString(),
-          compareAtPrice: style.compareAtPrice
-            ? style.compareAtPrice.toString()
-            : null,
-          optionValues: [{ optionName: "Title", name: "Default Title" }],
-        },
-      ],
+          price,
+          compareAtPrice,
+          optionValues: [{ optionName: "Size", name: option.label }],
+          // Digital delivery only — see billing/roadmap notes elsewhere;
+          // no physical fulfillment exists in this app yet.
+          inventoryItem: { requiresShipping: false },
+        };
+      }),
 
       // Always synced, even when empty — the gallery IS the product's
       // media now (no separate "select this one" step), so an empty
@@ -239,10 +315,10 @@ async function upsertShopifyProduct(
       files,
     };
 
-    return { input, knownAssets, newAssets, existingVariantId };
+    return { input, knownAssets, newAssets };
   }
 
-  let { input, knownAssets, newAssets, existingVariantId } = buildInput({
+  let { input, knownAssets, newAssets } = buildInput({
     forceRecreate: false,
   });
 
@@ -272,7 +348,7 @@ async function upsertShopifyProduct(
     ].some((error) => /not found/i.test(error.message));
 
   if (linkedProductMissing) {
-    ({ input, knownAssets, newAssets, existingVariantId } = buildInput({
+    ({ input, knownAssets, newAssets } = buildInput({
       forceRecreate: true,
     }));
 
@@ -300,7 +376,7 @@ async function upsertShopifyProduct(
   );
 
   if (staleMediaReference && knownAssets.length > 0) {
-    ({ input, knownAssets, newAssets, existingVariantId } = buildInput({
+    ({ input, knownAssets, newAssets } = buildInput({
       forceRecreate: false,
       forceReuploadMedia: true,
     }));
@@ -332,7 +408,31 @@ async function upsertShopifyProduct(
     throw new Error("Shopify did not return a product for this Style.");
   }
 
-  const variantId = product.variants.nodes[0]?.id ?? existingVariantId;
+  const sizeVariants: SizeVariantMapping[] = sizeOptions
+    .map((option) => {
+      const matchingNode = product.variants.nodes.find((node) =>
+        node.selectedOptions.some(
+          (selected) =>
+            selected.name === "Size" && selected.value === option.label,
+        ),
+      );
+
+      const variantId =
+        matchingNode?.id ?? existingVariantIdBySizeOption.get(option.id);
+
+      if (!variantId) {
+        return null;
+      }
+
+      return {
+        sizeOptionId: option.id,
+        variantId,
+        numericVariantId: numericIdFromGid(variantId),
+        label: option.label,
+        scalePercent: option.scalePercent,
+      };
+    })
+    .filter((entry): entry is SizeVariantMapping => entry !== null);
 
   // New media is appended after the already-known media we referenced by
   // id, and Shopify returns product media sorted by position, so the
@@ -360,7 +460,7 @@ async function upsertShopifyProduct(
   return {
     productId: product.id,
     handle: product.handle,
-    variantId,
+    sizeVariants,
     mediaAssignments,
   };
 }
@@ -495,9 +595,7 @@ export async function publishStyleToShopify(
 
         productSettings: {
           ...jsonObject(style.productSettings),
-          ...(upserted.variantId
-            ? { defaultVariantId: upserted.variantId }
-            : {}),
+          sizeVariants: upserted.sizeVariants,
         },
       },
     });

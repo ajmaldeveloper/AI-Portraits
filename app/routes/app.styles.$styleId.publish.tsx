@@ -10,6 +10,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import {
+  parseSizeVariants,
   publishStyleToShopify,
   unpublishStyleFromShopify,
 } from "../services/styles/style-publish.server";
@@ -85,6 +86,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     hasPendingChanges,
 
+    // A style published before print sizes existed has no
+    // sizeVariants recorded yet — its next update replaces the single
+    // legacy variant with the shop's configured sizes, which can break
+    // an already-open cart/checkout referencing the old variant id.
+    needsSizeVariantMigration:
+      style.status === "PUBLISHED" &&
+      parseSizeVariants(style.productSettings).length === 0,
+
     published: url.searchParams.get("published") === "1",
 
     unpublished: url.searchParams.get("unpublished") === "1",
@@ -147,6 +156,7 @@ export default function StylePublish() {
     tagsCount,
     collectionsCount,
     hasPendingChanges,
+    needsSizeVariantMigration,
     published,
     unpublished,
   } = useLoaderData<typeof loader>();
@@ -239,6 +249,17 @@ export default function StylePublish() {
 
             {isUpdateReady && !hasPendingChanges ? (
               <s-text color="subdued">No changes to push yet.</s-text>
+            ) : null}
+
+            {needsSizeVariantMigration ? (
+              <s-banner tone="warning" heading="Print sizes will be added">
+                <s-paragraph>
+                  This product still has its original single variant. The
+                  next update replaces it with the print sizes configured in
+                  Settings — any checkout already open with the old variant
+                  will need to start over.
+                </s-paragraph>
+              </s-banner>
             ) : null}
 
             <Form method="post">

@@ -20,6 +20,11 @@ class AiArtGenerator extends HTMLElement {
     this.photoFile = null;
     this.pollTimer = null;
 
+    // { variantId, label, scalePercent }[] — from the app proxy, only
+    // populated once the product's been published with the shop's
+    // configured print sizes as real Shopify variants.
+    this.sizeOptions = [];
+
     // Captured at submit time — the form's own inputs are gone by the
     // time the theme's native "Add to cart" is clicked, since a
     // finished generation replaces this element's whole contents with
@@ -28,6 +33,13 @@ class AiArtGenerator extends HTMLElement {
     this.submittedPersonalization = "";
     this.generationId = null;
     this.generationResultUrl = null;
+
+    // { [sizeLabel]: signedUrl } — same generated image, one signed URL
+    // per configured print size (the largest is the untouched original;
+    // smaller ones are resized on read). Matched against whichever
+    // variant the theme's native size picker has selected at
+    // add-to-cart time.
+    this.resultUrls = {};
   }
 
   connectedCallback() {
@@ -76,15 +88,26 @@ class AiArtGenerator extends HTMLElement {
         return;
       }
 
+      const selectedVariantId = getSelectedVariantId(form);
+
+      const matchedSize = this.sizeOptions.find(
+        (option) => option.variantId === selectedVariantId,
+      );
+
+      const resultImageUrl =
+        (matchedSize && this.resultUrls[matchedSize.label]) ||
+        this.generationResultUrl;
+
       event.formData.set(
         "properties[_ai_art_generation_id]",
         this.generationId || "",
       );
 
-      event.formData.set(
-        "properties[_ai_art_result_image]",
-        this.generationResultUrl,
-      );
+      event.formData.set("properties[_ai_art_result_image]", resultImageUrl);
+
+      if (matchedSize) {
+        event.formData.set("properties[Print size]", matchedSize.label);
+      }
 
       for (const [key, value] of Object.entries(this.submittedFieldValues)) {
         if (!value) {
@@ -158,6 +181,7 @@ class AiArtGenerator extends HTMLElement {
       }
 
       this.fields = payload.fields || [];
+      this.sizeOptions = payload.sizeOptions || [];
 
       this.renderForm();
     } catch {
@@ -433,6 +457,7 @@ class AiArtGenerator extends HTMLElement {
         if (payload.status === "SUCCEEDED" && payload.resultUrl) {
           this.generationId = generationId;
           this.generationResultUrl = payload.resultUrl;
+          this.resultUrls = payload.resultUrls || {};
 
           this.renderResult(payload.resultUrl);
 
@@ -638,6 +663,17 @@ function findProductForm(root) {
   }
 
   return document.querySelector('form[action*="/cart/add"]');
+}
+
+// Shopify's own theme templates render the variant/size picker as a
+// control named "id" inside the cart-add form (a <select> or a hidden
+// input the theme's variant-picker JS updates) — this app never
+// renders its own size picker, it just reads whatever the theme's
+// native one currently has selected.
+function getSelectedVariantId(form) {
+  const control = form.querySelector('[name="id"]');
+
+  return control ? String(control.value) : null;
 }
 
 function escapeHtml(value) {

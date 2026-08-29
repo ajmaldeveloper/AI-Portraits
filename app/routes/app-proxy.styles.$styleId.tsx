@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
 
+import { parseSizeVariants } from "../services/styles/style-publish.server";
 import { requireStyleForShop } from "../services/styles/style.server";
 import { authenticate } from "../shopify.server";
 
@@ -74,6 +75,16 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         helpText: field.helpText,
         defaultValue: field.defaultValue,
         options: stringArray(field.options),
+      })),
+
+      // Lets the storefront match the theme's native size/variant
+      // picker back to the right result-image URL from resultUrls (see
+      // app-proxy.generations.$generationId.tsx) — numericVariantId
+      // matches what the cart form's own "id" field submits.
+      sizeOptions: parseSizeVariants(style.productSettings).map((entry) => ({
+        variantId: entry.numericVariantId,
+        label: entry.label,
+        scalePercent: entry.scalePercent,
       })),
     },
     {
