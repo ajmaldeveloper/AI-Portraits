@@ -297,15 +297,6 @@ export function ProductConfiguration({
 
         <s-section heading="Sizes">
           <s-stack direction="block" gap="base">
-            <s-paragraph>
-              Add sizes to sell this as a real Shopify variant picker — each
-              becomes its own variant with its own price and compare-at
-              price. Scale is a percentage of the AI's original output; 100%
-              is the original resolution, anything lower is resized down
-              (never up, so nothing looks soft). Leave empty for a single,
-              one-size product.
-            </s-paragraph>
-
             {sizeOptions.length > 0 ? (
               <s-stack direction="block" gap="small">
                 {sizeOptions.map((row, index) => (
@@ -401,15 +392,6 @@ export function ProductConfiguration({
 
         <s-section heading="Framing">
           <s-stack direction="block" gap="base">
-            <s-paragraph>
-              Adds a second, independent variant choice on top of sizes —
-              e.g. "Unframed", "Framed - Black", "Framed - Natural Wood".
-              Price adjustment is added on top of whichever size the
-              customer picks. Turn on "Ships physically" for any option
-              that's a real framed product, not a digital file — leave it
-              off for an unframed/digital choice.
-            </s-paragraph>
-
             {framingOptions.length > 0 ? (
               <s-stack direction="block" gap="small">
                 {framingOptions.map((row, index) => (
