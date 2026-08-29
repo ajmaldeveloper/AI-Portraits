@@ -1,18 +1,14 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import {
-  Form,
-  useActionData,
-  useLoaderData,
-  useNavigation,
-} from "react-router";
+import { Form, useLoaderData, useNavigation } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { useEffect } from "react";
 
 import { UsageRing } from "../components/billing/usage-ring";
+import { FREE_PLAN_HANDLE, PRO_PLAN_HANDLE } from "../services/billing/billing-config";
+import { getShopifyAppHandle } from "../services/billing/billing-config.server";
 import { getShopPlanSummary } from "../services/billing/billing.server";
-import { PRO_PLAN, authenticate } from "../shopify.server";
-
-const isTestBilling = process.env.NODE_ENV !== "production";
+import { getShopifyPricingUrl } from "../services/billing/shopify-pricing.server";
+import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -24,87 +20,62 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     planSummary,
 
-    cancelled: url.searchParams.get("cancelled") === "1",
+    // Shopify's hosted pricing page appends this to whichever Redirect
+    // URL is configured for the selected plan in Partner Dashboard
+    // (Shopify App Pricing has no billing webhooks, so this — along
+    // with the live isShopOnProPlan() check above — is how the app
+    // finds out a plan changed).
+    planHandleFromRedirect: url.searchParams.get("plan_handle"),
   };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { billing, redirect } = await authenticate.admin(request);
+  const { session, redirect } = await authenticate.admin(request);
 
   const formData = await request.formData();
 
   const intent = formData.get("intent");
 
-  if (intent === "upgrade") {
-    // Redirects to Shopify's own confirmation page — the merchant
-    // approves the plan (and its spending cap) there, not in this app.
-    // billing.request() never returns normally.
-    await billing.request({
-      plan: PRO_PLAN,
-      isTest: isTestBilling,
-      returnUrl: `${process.env.SHOPIFY_APP_URL ?? ""}/app/plans`,
-    });
+  if (intent !== "manage-plans") {
+    return Response.json({ error: "Unsupported plans action." }, { status: 400 });
   }
 
-  if (intent === "cancel") {
-    try {
-      const { appSubscriptions } = await billing.check({
-        plans: [PRO_PLAN],
-        isTest: isTestBilling,
-      });
+  // Shopify App Pricing owns plan selection and changes entirely — the
+  // app can't create or cancel a subscription charge itself via the
+  // Billing API. Every "Choose X" button, upgrade or downgrade alike,
+  // sends the merchant to Shopify's own hosted pricing page.
+  const pricingUrl = getShopifyPricingUrl({
+    shopDomain: session.shop,
+    appHandle: getShopifyAppHandle(),
+  });
 
-      const subscription = appSubscriptions[0];
-
-      if (subscription) {
-        await billing.cancel({
-          subscriptionId: subscription.id,
-          isTest: isTestBilling,
-        });
-      }
-
-      return redirect("/app/plans?cancelled=1");
-    } catch (error) {
-      return {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Could not cancel the Pro plan.",
-      };
-    }
-  }
-
-  return null;
+  return redirect(pricingUrl, { target: "_top" });
 };
 
 export default function PlansRoute() {
-  const { planSummary, cancelled } = useLoaderData<typeof loader>();
-
-  const actionData = useActionData<typeof action>();
+  const { planSummary, planHandleFromRedirect } = useLoaderData<typeof loader>();
 
   const navigation = useNavigation();
 
   const shopify = useAppBridge();
 
-  const submittedIntent = navigation.formData?.get("intent");
+  const submittedPlanHandle = navigation.formData?.get("planHandle");
 
-  const upgrading =
-    navigation.state !== "idle" && submittedIntent === "upgrade";
-
-  const cancelling =
-    navigation.state !== "idle" && submittedIntent === "cancel";
+  const isPro = planSummary.isPro;
 
   useEffect(() => {
-    if (!cancelled) {
+    if (!planHandleFromRedirect) {
       return;
     }
 
-    shopify.toast.show("Pro plan cancelled — back on the Free plan");
+    const planName =
+      planHandleFromRedirect.toLowerCase() === PRO_PLAN_HANDLE ? "Pro" : "Free";
+
+    shopify.toast.show(`You're now on the ${planName} plan`);
 
     window.history.replaceState(null, "", "/app/plans");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cancelled, shopify]);
-
-  const isPro = planSummary.isPro;
+  }, [planHandleFromRedirect, shopify]);
 
   return (
     <s-page heading="Plans" inlineSize="base">
@@ -114,13 +85,10 @@ export default function PlansRoute() {
             <s-heading>Choose the right plan for your store</s-heading>
 
             <s-text tone="neutral">
-              Free forever for light use, or pay only for what you generate on
-              Pro — managed securely through Shopify billing.
+              Free forever for light use, or upgrade to Pro for unlimited
+              published prompts and generations — managed securely through
+              Shopify billing.
             </s-text>
-
-            {actionData?.error ? (
-              <s-banner tone="critical">{actionData.error}</s-banner>
-            ) : null}
 
             {isPro ? (
               <s-banner tone="success">You&apos;re on the Pro plan.</s-banner>
@@ -183,14 +151,19 @@ export default function PlansRoute() {
 
                 {isPro ? (
                   <Form method="post">
-                    <input type="hidden" name="intent" value="cancel" />
+                    <input type="hidden" name="intent" value="manage-plans" />
+                    <input
+                      type="hidden"
+                      name="planHandle"
+                      value={FREE_PLAN_HANDLE}
+                    />
 
                     <s-button
                       type="submit"
                       variant="secondary"
                       tone="critical"
-                      loading={cancelling}
-                      disabled={cancelling}
+                      loading={submittedPlanHandle === FREE_PLAN_HANDLE}
+                      disabled={submittedPlanHandle === FREE_PLAN_HANDLE}
                     >
                       Switch to Free
                     </s-button>
@@ -246,11 +219,21 @@ export default function PlansRoute() {
 
                 <s-stack direction="block" gap="small-200">
                   <s-heading>
-                    ${planSummary.generationUnitPrice.toFixed(2)}
+                    ${planSummary.proPlanMonthlyPrice.toFixed(2)}
                   </s-heading>
 
-                  <s-text tone="neutral">per AI generation</s-text>
+                  <s-text tone="neutral">per month</s-text>
+
+                  <s-text tone="neutral">
+                    or ${planSummary.proPlanYearlyPrice.toFixed(2)}/year
+                  </s-text>
                 </s-stack>
+
+                {planSummary.proPlanTrialDays > 0 ? (
+                  <s-badge tone="info">
+                    {planSummary.proPlanTrialDays}-day trial
+                  </s-badge>
+                ) : null}
 
                 {isPro ? (
                   <s-button variant="secondary" disabled>
@@ -258,13 +241,18 @@ export default function PlansRoute() {
                   </s-button>
                 ) : (
                   <Form method="post">
-                    <input type="hidden" name="intent" value="upgrade" />
+                    <input type="hidden" name="intent" value="manage-plans" />
+                    <input
+                      type="hidden"
+                      name="planHandle"
+                      value={PRO_PLAN_HANDLE}
+                    />
 
                     <s-button
                       type="submit"
                       variant="primary"
-                      loading={upgrading}
-                      disabled={upgrading}
+                      loading={submittedPlanHandle === PRO_PLAN_HANDLE}
+                      disabled={submittedPlanHandle === PRO_PLAN_HANDLE}
                     >
                       Choose Pro
                     </s-button>
@@ -276,8 +264,8 @@ export default function PlansRoute() {
                 <s-unordered-list>
                   <s-list-item>Unlimited prompts</s-list-item>
                   <s-list-item>Unlimited AI generations</s-list-item>
-                  <s-list-item>Pay only for what you generate</s-list-item>
-                  <s-list-item>Spending cap you approve on Shopify</s-list-item>
+                  <s-list-item>3-day free trial</s-list-item>
+                  <s-list-item>Cancel anytime from Shopify billing</s-list-item>
                 </s-unordered-list>
               </s-stack>
             </s-box>

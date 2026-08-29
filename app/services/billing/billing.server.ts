@@ -5,85 +5,79 @@ import { unauthenticated } from "../../shopify.server";
 import {
   FREE_PLAN_MONTHLY_GENERATION_LIMIT,
   FREE_PLAN_STYLE_LIMIT,
-  GENERATION_UNIT_PRICE,
+  PRO_PLAN,
+  PRO_PLAN_HANDLE,
+  PRO_PLAN_MONTHLY_PRICE,
+  PRO_PLAN_TRIAL_DAYS,
+  PRO_PLAN_YEARLY_PRICE,
 } from "./billing-config.server";
 
 // Plan status is never cached locally — it's read live from Shopify on
-// every check via a raw GraphQL call (through unauthenticated.admin,
-// which works both inside an authenticated admin request AND inside
-// the app-proxy's fire-and-forget customer-generation flow, unlike the
+// every check via raw GraphQL (through unauthenticated.admin, which
+// works both inside an authenticated admin request AND inside the
+// app-proxy's fire-and-forget customer-generation flow, unlike the
 // authenticate.admin()-only `billing` helper). This keeps the app
-// immune to drift if a subscription is cancelled/changed outside a
-// live request (e.g. a merchant cancels from the Shopify billing
-// settings page directly).
+// immune to drift if a subscription is changed outside a live request
+// (e.g. a merchant changes plan from Shopify's own billing page).
 
 export class PlanLimitError extends Error {}
 
-const ACTIVE_SUBSCRIPTION_QUERY = `#graphql
+// --- Admin API check (fallback) --------------------------------------
+//
+// Reads whatever subscription is active on the shop's installation via
+// the regular Admin API. Under Shopify App Pricing this may lag or
+// miss brand-new subscriptions for some shops, so it's used only when
+// the Partner API cross-check (the authoritative source for Shopify
+// App Pricing — see below) is unavailable.
+
+const ADMIN_ACTIVE_SUBSCRIPTION_QUERY = `#graphql
   query BillingActiveSubscription {
     currentAppInstallation {
       activeSubscriptions {
         id
         status
-        lineItems {
-          id
-          plan {
-            pricingDetails {
-              __typename
-            }
-          }
-        }
+        name
       }
     }
   }
 `;
 
-type ActiveSubscriptionResponse = {
+type AdminActiveSubscriptionResponse = {
   data?: {
     currentAppInstallation?: {
       activeSubscriptions: Array<{
         id: string;
         status: string;
-        lineItems: Array<{
-          id: string;
-          plan: {
-            pricingDetails: {
-              __typename: string;
-            };
-          };
-        }>;
+        name: string;
       }>;
     };
   };
 };
 
-async function findActiveUsageLineItemId(shop: string): Promise<string | null> {
+async function getAdminActiveSubscriptionName(
+  shop: string,
+): Promise<string | null> {
   const { admin } = await unauthenticated.admin(shop);
 
-  const response = await admin.graphql(ACTIVE_SUBSCRIPTION_QUERY);
+  const response = await admin.graphql(ADMIN_ACTIVE_SUBSCRIPTION_QUERY);
 
-  const payload = (await response.json()) as ActiveSubscriptionResponse;
+  const payload = (await response.json()) as AdminActiveSubscriptionResponse;
 
   const subscriptions =
     payload.data?.currentAppInstallation?.activeSubscriptions ?? [];
 
-  for (const subscription of subscriptions) {
-    if (subscription.status !== "ACTIVE") {
-      continue;
-    }
+  const active = subscriptions.find((subscription) => subscription.status === "ACTIVE");
 
-    const usageLineItem = subscription.lineItems.find(
-      (lineItem) =>
-        lineItem.plan.pricingDetails.__typename === "AppUsagePricing",
-    );
-
-    if (usageLineItem) {
-      return usageLineItem.id;
-    }
-  }
-
-  return null;
+  return active?.name?.trim() ?? null;
 }
+
+// --- Partner API check (primary) --------------------------------------
+//
+// The authoritative source for a shop's Shopify App Pricing plan —
+// Shopify App Pricing subscriptions are created and managed through
+// Shopify's own hosted pricing page, not through this app's Admin API
+// session, so the Partner API's activeSubscription() is the reliable
+// way to read which plan (by handle) a shop is actually on.
 
 const PARTNER_API_VERSION = "2026-07";
 
@@ -114,12 +108,8 @@ async function getShopGid(shop: string): Promise<string | null> {
 const PARTNER_ACTIVE_SUBSCRIPTION_QUERY = `#graphql
   query BillingPartnerActiveSubscription($appId: ID!, $shopId: ID!) {
     activeSubscription(appId: $appId, shopId: $shopId) {
-      lineItems {
-        plan {
-          pricingDetails {
-            __typename
-          }
-        }
+      items {
+        handle
       }
     }
   }
@@ -128,33 +118,24 @@ const PARTNER_ACTIVE_SUBSCRIPTION_QUERY = `#graphql
 type PartnerActiveSubscriptionResponse = {
   data?: {
     activeSubscription?: {
-      lineItems: Array<{
-        plan: {
-          pricingDetails: {
-            __typename: string;
-          };
-        };
-      }>;
+      items: Array<{ handle: string | null }>;
     } | null;
   };
   errors?: Array<{ message: string }>;
 };
 
 /**
- * Secondary cross-check via the Partner API, used only when the Admin
- * API (findActiveUsageLineItemId) finds no active subscription — a
- * safety net so one API's hiccup can never wrongly make a paying
- * merchant look unpaid (same reasoning the sibling wholesale-
- * registration app uses for its own Admin-API cross-check, just
- * mirrored the other way — this app's primary check is the Admin API).
- * Returns null (not false) when Partner API credentials aren't
- * configured, or the check itself fails for any reason, so callers
- * can tell "confirmed not on Pro" apart from "couldn't confirm either
- * way" — a null here must never be treated as a negative answer.
+ * Returns the active plan handle from the Partner API, or:
+ * - `null` if confirmed the shop has no active Shopify App Pricing
+ *   subscription (a real, negative answer).
+ * - `undefined` if this check couldn't be completed at all (Partner
+ *   API not configured, or the request itself failed) — callers must
+ *   never treat this the same as `null`, since it means "unknown," not
+ *   "not on Pro."
  */
-async function confirmProPlanViaPartnerApi(
+async function getPartnerActivePlanHandle(
   shop: string,
-): Promise<boolean | null> {
+): Promise<string | null | undefined> {
   const organizationId = process.env.SHOPIFY_PARTNER_ORGANIZATION_ID?.trim();
 
   const accessToken = process.env.SHOPIFY_PARTNER_API_ACCESS_TOKEN?.trim();
@@ -162,13 +143,13 @@ async function confirmProPlanViaPartnerApi(
   const appGid = process.env.SHOPIFY_APP_GID?.trim();
 
   if (!organizationId || !accessToken || !appGid) {
-    return null;
+    return undefined;
   }
 
   const shopGid = await getShopGid(shop);
 
   if (!shopGid) {
-    return null;
+    return undefined;
   }
 
   try {
@@ -190,115 +171,55 @@ async function confirmProPlanViaPartnerApi(
     );
 
     if (!response.ok) {
-      return null;
+      return undefined;
     }
 
     const payload =
       (await response.json()) as PartnerActiveSubscriptionResponse;
 
     if (payload.errors && payload.errors.length > 0) {
-      return null;
+      return undefined;
     }
 
     const subscription = payload.data?.activeSubscription;
 
     if (!subscription) {
-      return false;
+      return null;
     }
 
-    return subscription.lineItems.some(
-      (lineItem) =>
-        lineItem.plan.pricingDetails.__typename === "AppUsagePricing",
-    );
+    return subscription.items.find((item) => item.handle)?.handle ?? null;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
 export async function isShopOnProPlan(shop: string): Promise<boolean> {
-  const activeViaAdminApi = (await findActiveUsageLineItemId(shop)) !== null;
+  const partnerPlanHandle = await getPartnerActivePlanHandle(shop);
 
-  if (activeViaAdminApi) {
-    return true;
+  if (partnerPlanHandle !== undefined) {
+    return partnerPlanHandle?.toLowerCase() === PRO_PLAN_HANDLE;
   }
 
-  // The Admin API found nothing — cross-check the Partner API before
-  // concluding this shop really isn't on Pro. A no-op (returns null,
-  // treated as "not confirmed active") when Partner API credentials
-  // aren't configured, so this is purely additive when unset.
-  const activeViaPartnerApi = await confirmProPlanViaPartnerApi(shop);
+  // Partner API check couldn't be completed — fall back to the Admin
+  // API's own view of the subscription rather than assuming Free.
+  const adminSubscriptionName = await getAdminActiveSubscriptionName(shop);
 
-  return activeViaPartnerApi === true;
+  return adminSubscriptionName?.toLowerCase() === PRO_PLAN.toLowerCase();
 }
 
-const CREATE_USAGE_RECORD_MUTATION = `#graphql
-  mutation BillingCreateUsageRecord(
-    $subscriptionLineItemId: ID!
-    $description: String!
-    $price: MoneyInput!
-  ) {
-    appUsageRecordCreate(
-      subscriptionLineItemId: $subscriptionLineItemId
-      description: $description
-      price: $price
-    ) {
-      appUsageRecord {
-        id
-      }
-      userErrors {
-        field
-        message
-      }
-    }
-  }
-`;
-
-type CreateUsageRecordResponse = {
-  data?: {
-    appUsageRecordCreate?: {
-      appUsageRecord: { id: string } | null;
-      userErrors: Array<{ field: string[] | null; message: string }>;
-    };
-  };
-};
-
 /**
- * Charges a Pro-plan shop $GENERATION_UNIT_PRICE for one AI generation.
- * A no-op (not an error) on the Free plan — there's nothing to charge.
- * Never throws: billing must never block or fail a generation that has
- * already succeeded, so any failure here is logged and swallowed.
+ * Per-generation usage billing is deferred — Pro is a flat monthly/
+ * yearly subscription for now (configured entirely in Partner
+ * Dashboard > Pricing, not in code). Kept as a no-op so its call sites
+ * (customer-generation.server.ts, style-product-media.server.ts) don't
+ * need to change when metered billing is added later via the App
+ * Events API.
  */
-export async function recordGenerationUsage(shop: string, description: string) {
-  try {
-    const lineItemId = await findActiveUsageLineItemId(shop);
-
-    if (!lineItemId) {
-      return;
-    }
-
-    const { admin } = await unauthenticated.admin(shop);
-
-    const response = await admin.graphql(CREATE_USAGE_RECORD_MUTATION, {
-      variables: {
-        subscriptionLineItemId: lineItemId,
-        description,
-        price: {
-          amount: GENERATION_UNIT_PRICE,
-          currencyCode: "USD",
-        },
-      },
-    });
-
-    const payload = (await response.json()) as CreateUsageRecordResponse;
-
-    const userErrors = payload.data?.appUsageRecordCreate?.userErrors;
-
-    if (userErrors && userErrors.length > 0) {
-      console.error("Usage record creation returned userErrors", userErrors);
-    }
-  } catch (error) {
-    console.error("Could not record generation usage", error);
-  }
+export async function recordGenerationUsage(
+  _shop: string,
+  _description: string,
+) {
+  // Intentionally no-op — see comment above.
 }
 
 function startOfCurrentMonth() {
@@ -395,7 +316,9 @@ export type ShopPlanSummary = {
   publishedStyleLimit: number | null;
   generationsThisMonth: number;
   generationLimit: number | null;
-  generationUnitPrice: number;
+  proPlanMonthlyPrice: number;
+  proPlanYearlyPrice: number;
+  proPlanTrialDays: number;
 };
 
 export async function getShopPlanSummary(
@@ -413,6 +336,8 @@ export async function getShopPlanSummary(
     publishedStyleLimit: isPro ? null : FREE_PLAN_STYLE_LIMIT,
     generationsThisMonth,
     generationLimit: isPro ? null : FREE_PLAN_MONTHLY_GENERATION_LIMIT,
-    generationUnitPrice: GENERATION_UNIT_PRICE,
+    proPlanMonthlyPrice: PRO_PLAN_MONTHLY_PRICE,
+    proPlanYearlyPrice: PRO_PLAN_YEARLY_PRICE,
+    proPlanTrialDays: PRO_PLAN_TRIAL_DAYS,
   };
 }

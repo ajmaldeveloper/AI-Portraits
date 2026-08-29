@@ -1,25 +1,18 @@
-// Plain constants only — no imports from shopify.server.ts here, since
-// shopify.server.ts itself needs these to build its billing config
-// (importing the other way would be circular).
+export * from "./billing-config";
 
-export const PRO_PLAN = "Pro";
+// The app's handle, assigned by Shopify (Partner Dashboard > Basic app
+// information / shopify.app.toml's `handle` field). Required to build
+// the Shopify-hosted plan-selection URL merchants are redirected to —
+// Shopify App Pricing does not allow apps to create subscription
+// charges themselves via the Billing API. Reads process.env, so it
+// stays in the .server file (route components must never import this
+// module directly — see billing-config.ts for the plain constants).
+export function getShopifyAppHandle(): string {
+  const handle = process.env.SHOPIFY_APP_HANDLE?.trim();
 
-// What Pro-plan merchants pay per AI image generation, via Shopify's
-// usage-based Billing API. Env-configurable so it can change without a
-// code deploy.
-export const GENERATION_UNIT_PRICE = Number(
-  process.env.GENERATION_UNIT_PRICE ?? "0.5",
-);
+  if (!handle) {
+    throw new Error("SHOPIFY_APP_HANDLE is not configured.");
+  }
 
-// The monthly spending cap a Pro-plan merchant approves up front, as
-// Shopify requires for any usage-based plan. Once hit, further usage
-// charges pause until the merchant approves a higher cap — it's a
-// safety ceiling, not a target.
-export const PRO_PLAN_USAGE_CAP = Number(
-  process.env.PRO_PLAN_USAGE_CAP ?? "100",
-);
-
-// Free plan: always free, no Shopify subscription at all.
-export const FREE_PLAN_STYLE_LIMIT = 1;
-
-export const FREE_PLAN_MONTHLY_GENERATION_LIMIT = 10;
+  return handle;
+}

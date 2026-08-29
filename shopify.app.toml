@@ -4,6 +4,7 @@ client_id = "029bdc7c4e2d4083740c4b3c634e4274"
 application_url = "https://winslet-ai-portraits.fly.dev"
 embedded = true
 name = "Winslet AI Portraits"
+handle = "winslet-ai-portraits"
 
 [access_scopes]
 scopes = "write_products,write_publications,read_files"
