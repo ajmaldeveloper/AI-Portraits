@@ -694,6 +694,107 @@ const GENERATION_PROMPT_TEMPLATES: Array<{
   },
 ];
 
+// TEMPORARY — client preview batch only. Prefills the generation
+// prompt for these 5 specific styles so no typing is needed before
+// clicking Generate. Remove this map and revert generationPrompt's
+// initial state back to "" once the preview batch is generated.
+const TEMP_PREFILLED_GENERATION_PROMPTS: Record<
+  string,
+  (productTitle: string) => string
+> = {
+  "Van Gogh": (productTitle) =>
+    buildGenerationPromptTemplate({
+      productTitle,
+      subject:
+        "An adult in their late 20s to 30s with tousled hair and a calm, thoughtful expression, wearing a simple collared linen shirt, shown from the shoulders up against an expressive swirling sky.",
+      style:
+        "A genuine Van Gogh-style post-impressionist oil painting — thick, swirling, expressive impasto brushstrokes built up in visible layers, directional strokes following the contours of the subject, clothing, and background alike, curling into rhythmic swirls the way starry skies and wheat fields do in his work.",
+      palette:
+        "#1B3A6B (deep cobalt blue), #F2C94C (golden yellow), #2E5E3E (emerald green), #E0761C (burnt orange), and #4A2E1B (warm umber shadow) — bold, energetic color contrast rather than smooth blending.",
+      lighting:
+        "Dramatic, swirling directional light suggested entirely through brushstroke movement rather than realistic shading, echoing a starry-night mood.",
+      composition:
+        "Classic portrait framing, subject centered, swirling sky-like brushwork filling the background.",
+      texture:
+        "Thick, visible impasto paint texture built up in real layers, energetic directional strokes throughout.",
+      avoid:
+        "A smooth digital swirl filter, flat pasted-on texture, or muted/desaturated colors.",
+    }),
+
+  "Oil Painting": (productTitle) =>
+    buildGenerationPromptTemplate({
+      productTitle,
+      subject:
+        "An adult with neatly styled hair and a composed, natural expression, wearing simple classic attire, shown from the shoulders up against a softly draped backdrop.",
+      style:
+        "A rich, classical oil painting — visible brushstroke texture built up in layers, deep saturated color, and traditional painterly lighting with soft, natural contrast between highlights and shadow.",
+      palette:
+        "#8B5A2B (warm umber), #C9922C (gold highlight), #3B2A1F (deep shadow), #6B4423 (warm brown), and #D9C9A8 (soft cream highlight) — warm and true-to-life, deepened for painterly richness.",
+      lighting:
+        "Soft, natural chiaroscuro with gentle contrast between lit and shadowed areas of the face and clothing.",
+      composition:
+        "Classic portrait framing, subject centered against a softly rendered dark drapery background.",
+      texture:
+        "Real canvas texture and layered brushwork throughout, especially visible in the clothing and background.",
+      avoid: "A smooth digital painting filter or an AI-smoothed photo look.",
+    }),
+
+  Watercolor: (productTitle) =>
+    buildGenerationPromptTemplate({
+      productTitle,
+      subject:
+        "An adult with soft, loose hair and a gentle, relaxed expression, wearing a simple pastel-toned top, shown from the shoulders up against a softly washed background.",
+      style:
+        "A soft, hand-painted watercolor illustration — gentle pigment bleed at the edges of every shape, visible watercolor paper texture across the whole image, and loose, confident brushwork in place of sharp photographic detail.",
+      palette:
+        "#F4E8D8 (warm paper), #A9C9CA (soft teal), #E8B4B8 (dusty rose), #7C9885 (sage green), and #4A6670 (muted blue-gray) — soft and harmonious.",
+      lighting:
+        "Soft, diffuse light with no harsh shadows, evoking a gentle hand-painted mood.",
+      composition:
+        "Subject centered, generous unpainted paper space and a loose wash background framing the figure.",
+      texture:
+        "Visible paper grain and soft pigment bleed at every edge, loose confident brushwork throughout.",
+      avoid: "A flat filter or a texture overlay pasted on top of a photo.",
+    }),
+
+  "Sunlit Pop Portrait": (productTitle) =>
+    buildGenerationPromptTemplate({
+      productTitle,
+      subject:
+        "An adult with a bright, relaxed expression and simply styled hair, wearing a plain bold-colored top, shown from the shoulders up in a sunny poolside-inspired setting.",
+      style:
+        "A bold, sun-drenched pop-art style portrait — flattened color palette in vivid saturated blocks with minimal gradient shading, clean bold outlines around major shapes, and lighting simplified into flat, graphic color fields rather than realistic shadow.",
+      palette:
+        "#1E90D8 (vivid pool blue), #F2C744 (warm sun yellow), #E8598A (vivid pink), #4FBF8F (fresh green), and #FFFFFF (crisp white highlight) — bright poolside tones.",
+      lighting:
+        "A bright, evenly lit, sunny mood throughout with no realistic soft shadow.",
+      composition:
+        "Subject centered, simplified flat graphic background suggesting a sunny poolside scene.",
+      texture:
+        "Flat, clean color fields with bold graphic outlines — no gradient shading or painterly texture.",
+      avoid: "A photorealistic filter or a muddy, blended color overlay.",
+    }),
+
+  "Raw Expressionist Graffiti": (productTitle) =>
+    buildGenerationPromptTemplate({
+      productTitle,
+      subject:
+        "An adult figure with a bold, confident presence and simply suggested features, shown from the shoulders up against a raw urban canvas-like background.",
+      style:
+        "A raw, energetic neo-expressionist street-art painting — bold, loose scrawled linework around the subject's outline, layered scribbled mark-making, and rough, unpolished brushwork with visible layering and drips.",
+      palette:
+        "#E8231B (vivid red), #F2C230 (bright yellow), #1B4FA0 (deep blue), #0D0D0D (raw black outline), and #F5F0E0 (raw canvas cream).",
+      lighting:
+        "Flat, raw lighting with no realistic shading — the energy comes from the mark-making, not light and shadow.",
+      composition:
+        "Subject centered, raw unpolished canvas-like background with loose scrawled marks framing the figure.",
+      texture:
+        "Rough, unpolished brushwork with visible layering, drips, and scribbled linework throughout.",
+      avoid:
+        "A smooth digital filter or a generic graffiti texture pasted on top.",
+    }),
+};
+
 export default function StyleMedia() {
   const data = useLoaderData<typeof loader>();
 
@@ -742,10 +843,16 @@ export default function StyleMedia() {
     setMediaModeState(data.mediaMode === "upload" ? "upload" : "generate");
   }, [data.mediaMode]);
 
-  // Starts empty — the placeholder text is just guidance, not
-  // pre-filled text the merchant has to clear out first. The Generate
-  // button stays disabled until something is actually typed.
-  const [generationPrompt, setGenerationPrompt] = useState("");
+  // TEMPORARY — prefilled for the client preview batch (see
+  // TEMP_PREFILLED_GENERATION_PROMPTS above) when the style name
+  // matches one of the 5 preview styles; empty otherwise. Revert to
+  // useState("") once that batch is generated.
+  const [generationPrompt, setGenerationPrompt] = useState(
+    () =>
+      TEMP_PREFILLED_GENERATION_PROMPTS[data.styleName]?.(
+        data.productTitle,
+      ) ?? "",
+  );
 
   const mediaModeFetcher = useFetcher();
 
