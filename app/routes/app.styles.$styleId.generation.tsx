@@ -1,10 +1,11 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import {
   Form,
   useActionData,
   useLoaderData,
   useNavigation,
 } from "react-router";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import {
   ASPECT_RATIO_OPTIONS,
@@ -231,3 +232,6 @@ export default function StyleGeneration() {
     </s-stack>
   );
 }
+
+export const headers: HeadersFunction = (headersArgs) =>
+  boundary.headers(headersArgs);

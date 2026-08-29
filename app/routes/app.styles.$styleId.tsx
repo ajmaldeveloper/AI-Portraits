@@ -1,4 +1,4 @@
-import type { LoaderFunctionArgs } from "react-router";
+import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import {
   Form,
   Outlet,
@@ -6,6 +6,7 @@ import {
   useLocation,
   useNavigation,
 } from "react-router";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { StyleStatusBadge } from "../components/styles/style-status-badge";
 import {
@@ -313,3 +314,6 @@ export default function StyleWorkspace() {
     </s-page>
   );
 }
+
+export const headers: HeadersFunction = (headersArgs) =>
+  boundary.headers(headersArgs);

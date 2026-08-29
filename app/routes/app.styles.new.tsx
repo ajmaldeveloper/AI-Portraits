@@ -1,5 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useActionData } from "react-router";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { StyleForm } from "../components/styles/style-form";
 import { createStyleDraft } from "../services/styles/style.server";
@@ -138,3 +139,6 @@ export default function NewStyle() {
     </s-page>
   );
 }
+
+export const headers: HeadersFunction = (headersArgs) =>
+  boundary.headers(headersArgs);

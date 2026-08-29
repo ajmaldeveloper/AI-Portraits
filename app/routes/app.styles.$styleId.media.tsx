@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import {
   Form,
   useActionData,
@@ -9,6 +9,7 @@ import {
   useSubmit,
 } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { createSignedStyleAssetUrl } from "../services/media/media-signing.server";
 import { getAIProviderSettingsSummary } from "../services/settings/ai-provider-settings.server";
@@ -1436,3 +1437,6 @@ export default function StyleMedia() {
     </s-stack>
   );
 }
+
+export const headers: HeadersFunction = (headersArgs) =>
+  boundary.headers(headersArgs);

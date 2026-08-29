@@ -1,5 +1,6 @@
-import type { LoaderFunctionArgs } from "react-router";
+import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { UsageRing } from "../components/billing/usage-ring";
 import { MetricCard } from "../components/dashboard/metric-card";
@@ -620,3 +621,6 @@ export default function Dashboard() {
     </s-page>
   );
 }
+
+export const headers: HeadersFunction = (headersArgs) =>
+  boundary.headers(headersArgs);

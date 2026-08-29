@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import {
   Form,
   useActionData,
@@ -7,6 +7,7 @@ import {
   useNavigation,
 } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { MetricIconChip } from "../components/dashboard/metric-card";
 import {
@@ -560,3 +561,6 @@ export default function AppSettings() {
     </s-page>
   );
 }
+
+export const headers: HeadersFunction = (headersArgs) =>
+  boundary.headers(headersArgs);

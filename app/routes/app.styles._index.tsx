@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { StyleStatus } from "@prisma/client";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import {
   Form,
   useActionData,
@@ -10,6 +10,7 @@ import {
   useSearchParams,
 } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { MetricCard } from "../components/dashboard/metric-card";
 import { StyleActionsMenu } from "../components/styles/style-actions-menu";
@@ -810,3 +811,6 @@ export default function StylesIndex() {
     </s-page>
   );
 }
+
+export const headers: HeadersFunction = (headersArgs) =>
+  boundary.headers(headersArgs);

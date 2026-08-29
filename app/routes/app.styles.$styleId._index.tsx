@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useActionData, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { StyleOverviewForm } from "../components/styles/style-overview-form";
 import { deleteStyleAndShopifyProduct } from "../services/styles/style-publish.server";
@@ -160,3 +161,6 @@ export default function StyleOverview() {
     />
   );
 }
+
+export const headers: HeadersFunction = (headersArgs) =>
+  boundary.headers(headersArgs);
