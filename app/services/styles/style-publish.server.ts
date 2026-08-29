@@ -109,7 +109,7 @@ const PRODUCT_SET_MUTATION = `#graphql
       product {
         id
         handle
-        variants(first: 25) {
+        variants(first: 100) {
           nodes {
             id
             selectedOptions {
@@ -132,13 +132,21 @@ const PRODUCT_SET_MUTATION = `#graphql
   }
 `;
 
-// Persisted in Style.productSettings.sizeVariants. Keyed by
-// sizeOptionId (the ShopSizeOption's stable id), not by label — so
-// renaming a size in Settings renames the existing Shopify variant on
-// next republish instead of deleting and recreating it (which would
-// break any cart/checkout already holding the old variant id).
+// Persisted in Style.productSettings.sizeVariants — one entry per
+// actual Shopify variant (not per Size option, since a size can now
+// correspond to several variants, one per Framing choice). compositeKey
+// joins every active axis's option id in a fixed order
+// (`${sizeOptionId ?? "none"}::${framingOptionId ?? "none"}`), not
+// label text — so renaming a size or framing option later renames the
+// existing Shopify variant on next republish instead of deleting and
+// recreating it (which would break any cart/checkout already holding
+// the old variant id). label/scalePercent always come from the Size
+// axis only (or "Default Title"/100 when there's no Size axis) — never
+// the Framing axis — since that's the one contract the storefront
+// depends on: which resolution to serve for whichever variant was
+// picked. Framing never affects image resolution.
 export type SizeVariantMapping = {
-  sizeOptionId: string;
+  compositeKey: string;
   variantId: string;
   numericVariantId: string;
   label: string;
@@ -149,6 +157,57 @@ function numericIdFromGid(gid: string): string {
   const segments = gid.split("/");
 
   return segments[segments.length - 1] ?? gid;
+}
+
+// One independent variant axis (Size or Framing). A combination is one
+// value chosen from each currently-active axis; the cartesian product
+// of all active axes' values is the full variant matrix Shopify needs.
+type AxisValue = {
+  optionId: string;
+  label: string;
+  priceContribution: number;
+  // null = this option didn't set its own discount — combination logic
+  // falls back to its priceContribution (no discount from this axis),
+  // never to 0.
+  compareAtContribution: number | null;
+  // null = this axis never sets shipping (only Framing does).
+  requiresShipping: boolean | null;
+  // null = this axis never affects image resolution (only Size does).
+  scalePercent: number | null;
+};
+
+type VariantAxis = {
+  name: string;
+  values: AxisValue[];
+};
+
+function cartesianProduct(
+  axes: VariantAxis[],
+): Array<Array<{ axisName: string; value: AxisValue }>> {
+  return axes.reduce<Array<Array<{ axisName: string; value: AxisValue }>>>(
+    (combinations, axis) =>
+      combinations.flatMap((combination) =>
+        axis.values.map((value) => [
+          ...combination,
+          { axisName: axis.name, value },
+        ]),
+      ),
+    [[]],
+  );
+}
+
+function compositeKeyFor(
+  combination: Array<{ axisName: string; value: AxisValue }>,
+): string {
+  const sizeId =
+    combination.find((entry) => entry.axisName === "Size")?.value.optionId ??
+    "none";
+
+  const framingId =
+    combination.find((entry) => entry.axisName === "Framing")?.value
+      .optionId ?? "none";
+
+  return `${sizeId}::${framingId}`;
 }
 
 /**
@@ -199,36 +258,68 @@ async function upsertShopifyProduct(
 
   const productSettings = jsonObject(style.productSettings);
 
-  // Per-style, opt-in — an empty list (the common case, and every
-  // style before this feature existed) publishes as the original
-  // single "Default Title" variant, exactly as before. A merchant adds
-  // rows on the Product tab to turn this into a real size/variant
-  // picker with its own price per size.
-  const sizeOptions = style.sizeOptions;
+  // Per-style, opt-in — every axis a merchant hasn't configured on the
+  // Product tab is simply absent, and an empty axis list (the common
+  // case, and every style before this feature existed) publishes as
+  // the original single "Default Title" variant, exactly as before.
+  const axes: VariantAxis[] = [];
 
-  const hasSizes = sizeOptions.length > 0;
+  if (style.sizeOptions.length > 0) {
+    axes.push({
+      name: "Size",
+      values: style.sizeOptions.map((option) => ({
+        optionId: option.id,
+        label: option.label,
+        priceContribution: Number(option.price),
+        compareAtContribution: option.compareAtPrice
+          ? Number(option.compareAtPrice)
+          : null,
+        requiresShipping: null,
+        scalePercent: option.scalePercent,
+      })),
+    });
+  }
+
+  if (style.framingOptions.length > 0) {
+    axes.push({
+      name: "Framing",
+      values: style.framingOptions.map((option) => ({
+        optionId: option.id,
+        label: option.label,
+        priceContribution: Number(option.priceDelta),
+        compareAtContribution: option.compareAtPriceDelta
+          ? Number(option.compareAtPriceDelta)
+          : null,
+        requiresShipping: option.requiresShipping,
+        scalePercent: null,
+      })),
+    });
+  }
+
+  const hasAxes = axes.length > 0;
+
+  const combinations = cartesianProduct(axes);
 
   const existingSizeVariants = Array.isArray(productSettings.sizeVariants)
     ? (productSettings.sizeVariants as unknown[]).filter(
         (entry): entry is SizeVariantMapping =>
           typeof entry === "object" &&
           entry !== null &&
-          typeof (entry as SizeVariantMapping).sizeOptionId === "string" &&
+          typeof (entry as SizeVariantMapping).compositeKey === "string" &&
           typeof (entry as SizeVariantMapping).variantId === "string",
       )
     : [];
 
-  const existingVariantIdBySizeOption = new Map(
-    existingSizeVariants.map((entry) => [entry.sizeOptionId, entry.variantId]),
+  const existingVariantIdByCompositeKey = new Map(
+    existingSizeVariants.map((entry) => [entry.compositeKey, entry.variantId]),
   );
 
-  // Legacy path — the single variant a no-sizes product already has
+  // Legacy path — the single variant a no-axes product already has
   // from before this feature (or still has, if it never opted in).
   const legacyVariantId =
     typeof productSettings.defaultVariantId === "string"
       ? productSettings.defaultVariantId
-      : (existingSizeVariants.find((entry) => entry.sizeOptionId === "default")
-          ?.variantId ?? null);
+      : (existingVariantIdByCompositeKey.get("none::none") ?? null);
 
   // Already-attached assets are normally referenced by their known
   // Shopify media ID (kept as-is), and new ones submitted by URL —
@@ -286,36 +377,79 @@ async function upsertShopifyProduct(
         },
       ],
 
-      // One "Size" option per StyleSizeOption the merchant configured
-      // on the Product tab — or, if none, Shopify's own "Title"/
-      // "Default Title" convention for a plain single-variant product
+      // One Shopify product option per active axis (Size, Framing) —
+      // or, if neither is configured, Shopify's own "Title"/"Default
+      // Title" convention for a plain single-variant product
       // (productSet still requires an explicit option/optionValues
       // even for that simple case).
-      productOptions: hasSizes
-        ? [
-            {
-              name: "Size",
-              values: sizeOptions.map((option) => ({ name: option.label })),
-            },
-          ]
+      productOptions: hasAxes
+        ? axes.map((axis) => ({
+            name: axis.name,
+            values: axis.values.map((value) => ({ name: value.label })),
+          }))
         : [{ name: "Title", values: [{ name: "Default Title" }] }],
 
-      variants: hasSizes
-        ? sizeOptions.map((option) => {
+      variants: hasAxes
+        ? combinations.map((combination) => {
+            const compositeKey = compositeKeyFor(combination);
+
             const existingVariantId = options.forceRecreate
               ? null
-              : (existingVariantIdBySizeOption.get(option.id) ?? null);
+              : (existingVariantIdByCompositeKey.get(compositeKey) ?? null);
+
+            const sizeValue =
+              combination.find((entry) => entry.axisName === "Size")
+                ?.value ?? null;
+
+            const framingValue =
+              combination.find((entry) => entry.axisName === "Framing")
+                ?.value ?? null;
+
+            // Size contributes the base price (or the Style's flat
+            // basePrice if there's no Size axis at all); Framing is
+            // always an add-on delta on top of that.
+            const basePrice = sizeValue
+              ? sizeValue.priceContribution
+              : Number(style.basePrice);
+
+            const price = basePrice + (framingValue?.priceContribution ?? 0);
+
+            // A missing compareAt/delta on a *present* axis means "no
+            // discount from that axis" (falls back to its own price
+            // contribution), not 0 — summing zeros would produce a
+            // compareAtPrice below the actual price, which Shopify
+            // rejects. An axis that's absent entirely contributes
+            // nothing either way.
+            const sizeCompareAtBase = sizeValue
+              ? (sizeValue.compareAtContribution ?? sizeValue.priceContribution)
+              : style.compareAtPrice
+                ? Number(style.compareAtPrice)
+                : Number(style.basePrice);
+
+            const framingCompareAtDelta = framingValue
+              ? (framingValue.compareAtContribution ??
+                  framingValue.priceContribution)
+              : 0;
+
+            const combinedCompareAt =
+              sizeCompareAtBase + framingCompareAtDelta;
+
+            const compareAtPrice =
+              combinedCompareAt > price ? combinedCompareAt.toFixed(2) : null;
 
             return {
               ...(existingVariantId ? { id: existingVariantId } : {}),
-              price: option.price.toString(),
-              compareAtPrice: option.compareAtPrice
-                ? option.compareAtPrice.toString()
-                : null,
-              optionValues: [{ optionName: "Size", name: option.label }],
-              // Digital delivery only — no physical fulfillment exists
-              // in this app yet.
-              inventoryItem: { requiresShipping: false },
+              price: price.toFixed(2),
+              compareAtPrice,
+              optionValues: combination.map((entry) => ({
+                optionName: entry.axisName,
+                name: entry.value.label,
+              })),
+              // Only Framing ever makes a variant a real physical
+              // product — everything else in this app is digital.
+              inventoryItem: {
+                requiresShipping: framingValue?.requiresShipping ?? false,
+              },
             };
           })
         : [
@@ -436,29 +570,50 @@ async function upsertShopifyProduct(
   // every downstream consumer (app-proxy routes, storefront JS) can
   // treat "has sizes" and "doesn't" identically — there's always at
   // least one size to resolve a result-image URL against.
-  const sizeVariants: SizeVariantMapping[] = hasSizes
-    ? sizeOptions
-        .map((option) => {
+  const sizeVariants: SizeVariantMapping[] = hasAxes
+    ? combinations
+        .map((combination) => {
+          const compositeKey = compositeKeyFor(combination);
+
+          // Every axis in this combination must match — with two axes,
+          // several variant nodes share the same Size value (one per
+          // Framing choice), so checking only one axis (.some() alone)
+          // can grab the wrong node. Every expected {name, value} pair
+          // must be present on the node's selectedOptions.
+          const expectedOptions = combination.map((entry) => ({
+            name: entry.axisName,
+            value: entry.value.label,
+          }));
+
           const matchingNode = product.variants.nodes.find((node) =>
-            node.selectedOptions.some(
-              (selected) =>
-                selected.name === "Size" && selected.value === option.label,
+            expectedOptions.every((expected) =>
+              node.selectedOptions.some(
+                (selected) =>
+                  selected.name === expected.name &&
+                  selected.value === expected.value,
+              ),
             ),
           );
 
           const variantId =
-            matchingNode?.id ?? existingVariantIdBySizeOption.get(option.id);
+            matchingNode?.id ?? existingVariantIdByCompositeKey.get(compositeKey);
 
           if (!variantId) {
             return null;
           }
 
+          // label/scalePercent always come from the Size axis only —
+          // Framing never affects which image resolution to serve.
+          const sizeValue =
+            combination.find((entry) => entry.axisName === "Size")?.value ??
+            null;
+
           return {
-            sizeOptionId: option.id,
+            compositeKey,
             variantId,
             numericVariantId: numericIdFromGid(variantId),
-            label: option.label,
-            scalePercent: option.scalePercent,
+            label: sizeValue ? sizeValue.label : "Default Title",
+            scalePercent: sizeValue?.scalePercent ?? 100,
           };
         })
         .filter((entry): entry is SizeVariantMapping => entry !== null)
@@ -471,7 +626,7 @@ async function upsertShopifyProduct(
 
         return [
           {
-            sizeOptionId: "default",
+            compositeKey: "none::none",
             variantId,
             numericVariantId: numericIdFromGid(variantId),
             label: "Default Title",

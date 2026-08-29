@@ -111,10 +111,11 @@ model Style {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  fields      StyleField[]
-  assets      StyleAsset[]
-  generations Generation[]
-  sizeOptions StyleSizeOption[]
+  fields         StyleField[]
+  assets         StyleAsset[]
+  generations    Generation[]
+  sizeOptions    StyleSizeOption[]
+  framingOptions StyleFramingOption[]
 
   @@index([shop, status])
   @@index([shop, createdAt])
@@ -275,6 +276,36 @@ model StyleSizeOption {
   price          Decimal
   compareAtPrice Decimal?
   position       Int      @default(0)
+
+  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([styleId, label])
+  @@index([styleId, position])
+}
+
+// Per-style Framing option — a second, independent variant axis from
+// Size. Deliberately one free-text axis (e.g. "Unframed", "Framed -
+// Black", "Framed - Natural Wood") rather than a separate conditional
+// "frame color" sub-option, to avoid Shopify's combinatorial variant
+// explosion. Unlike everything else in this app, a framed row can be a
+// real physical product — requiresShipping controls that per row.
+// priceDelta/compareAtPriceDelta are added on top of whichever size the
+// customer picks (or the Style's flat basePrice if no sizes exist),
+// not an absolute price. Same stable-id-matching reasoning as
+// StyleSizeOption.
+model StyleFramingOption {
+  id String @id @default(cuid())
+
+  styleId String
+
+  label               String
+  priceDelta          Decimal
+  compareAtPriceDelta Decimal?
+  requiresShipping    Boolean
+  position            Int      @default(0)
 
   style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
 

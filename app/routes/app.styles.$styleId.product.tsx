@@ -6,6 +6,10 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { ProductConfiguration } from "../components/styles/product-configuration";
 import {
+  type SaveStyleFramingOptionInput,
+  saveStyleFramingOptions,
+} from "../services/styles/style-framing-options.server";
+import {
   type SaveStyleSizeOptionInput,
   saveStyleSizeOptions,
 } from "../services/styles/style-size-options.server";
@@ -218,6 +222,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       price: option.price.toString(),
       compareAtPrice: option.compareAtPrice?.toString() ?? "",
     })),
+
+    framingOptions: style.framingOptions.map((option) => ({
+      id: option.id,
+      label: option.label,
+      priceDelta: option.priceDelta.toString(),
+      compareAtPriceDelta: option.compareAtPriceDelta?.toString() ?? "",
+      requiresShipping: option.requiresShipping,
+    })),
   };
 };
 
@@ -303,6 +315,43 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       };
     });
 
+    const framingRaw = formData.get("framingJson");
+
+    let framingParsed: unknown;
+
+    try {
+      framingParsed = JSON.parse(String(framingRaw ?? "[]"));
+    } catch {
+      return { error: "Could not read the submitted framing options." };
+    }
+
+    if (!Array.isArray(framingParsed)) {
+      return { error: "Could not read the submitted framing options." };
+    }
+
+    const framingInputs: SaveStyleFramingOptionInput[] = framingParsed.map(
+      (entry) => {
+        const row = (entry ?? {}) as Record<string, unknown>;
+
+        const id =
+          typeof row.id === "string" && !row.id.startsWith("new-")
+            ? row.id
+            : undefined;
+
+        const compareAtPriceDeltaRaw = String(
+          row.compareAtPriceDelta ?? "",
+        ).trim();
+
+        return {
+          id,
+          label: String(row.label ?? ""),
+          priceDelta: String(row.priceDelta ?? ""),
+          compareAtPriceDelta: compareAtPriceDeltaRaw || null,
+          requiresShipping: row.requiresShipping === true,
+        };
+      },
+    );
+
     await updateStyleDraft(session.shop, styleId, {
       productTitle,
       productDescription,
@@ -313,6 +362,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     });
 
     await saveStyleSizeOptions(session.shop, styleId, sizeInputs);
+
+    await saveStyleFramingOptions(session.shop, styleId, framingInputs);
 
     return redirect(`/app/styles/${styleId}/product?notice=product-saved`);
   } catch (error) {
@@ -379,6 +430,7 @@ export default function StyleProduct() {
         tags={data.tags}
         collections={data.collections}
         sizeOptions={data.sizeOptions}
+        framingOptions={data.framingOptions}
         editable={data.editable}
       />
 

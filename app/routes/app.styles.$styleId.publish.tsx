@@ -86,18 +86,38 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     hasPendingChanges,
 
-    // Sizes were just added on the Product tab to a product that's
-    // still on its original single "Default Title" variant (or vice
-    // versa — the option changing at all forces this either way) — the
-    // next update replaces that variant with the new size variants,
-    // which can break an already-open cart/checkout referencing the
-    // old variant id.
-    needsSizeVariantMigration:
-      style.status === "PUBLISHED" &&
-      style.sizeOptions.length > 0 &&
-      !parseSizeVariants(style.productSettings).some(
-        (entry) => entry.sizeOptionId !== "default",
-      ),
+    // Fires whenever the set of active variant axes (Size, Framing) on
+    // the Product tab right now differs from what the last publish
+    // actually created in Shopify — adding, removing, or combining
+    // axes always replaces every variant (the option set itself
+    // changes), which can break an already-open cart/checkout
+    // referencing an old variant id. compositeKey is
+    // `${sizeOptionId ?? "none"}::${framingOptionId ?? "none"}`, so its
+    // two halves tell us which axes were active last time.
+    needsSizeVariantMigration: (() => {
+      if (style.status !== "PUBLISHED") {
+        return false;
+      }
+
+      const currentHasSizes = style.sizeOptions.length > 0;
+
+      const currentHasFraming = style.framingOptions.length > 0;
+
+      const storedVariants = parseSizeVariants(style.productSettings);
+
+      const storedHasSizes = storedVariants.some(
+        (entry) => !entry.compositeKey.startsWith("none::"),
+      );
+
+      const storedHasFraming = storedVariants.some(
+        (entry) => !entry.compositeKey.endsWith("::none"),
+      );
+
+      return (
+        currentHasSizes !== storedHasSizes ||
+        currentHasFraming !== storedHasFraming
+      );
+    })(),
 
     published: url.searchParams.get("published") === "1",
 
@@ -257,12 +277,12 @@ export default function StylePublish() {
             ) : null}
 
             {needsSizeVariantMigration ? (
-              <s-banner tone="warning" heading="Print sizes will be added">
+              <s-banner tone="warning" heading="Variants will change">
                 <s-paragraph>
-                  This product still has its original single variant. The
-                  next update replaces it with the print sizes configured in
-                  Settings — any checkout already open with the old variant
-                  will need to start over.
+                  Sizes and/or framing configured on the Product tab don&rsquo;t
+                  match this product&rsquo;s live variants yet. The next update
+                  replaces them to match — any checkout already open with an
+                  old variant will need to start over.
                 </s-paragraph>
               </s-banner>
             ) : null}

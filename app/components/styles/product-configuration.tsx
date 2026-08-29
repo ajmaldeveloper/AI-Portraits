@@ -18,6 +18,14 @@ export type SizeOptionSummary = {
   compareAtPrice: string;
 };
 
+export type FramingOptionSummary = {
+  id: string;
+  label: string;
+  priceDelta: string;
+  compareAtPriceDelta: string;
+  requiresShipping: boolean;
+};
+
 type ProductConfigurationProps = {
   productTitle: string;
   productDescription: string;
@@ -26,6 +34,7 @@ type ProductConfigurationProps = {
   tags: string[];
   collections: CollectionSummary[];
   sizeOptions: SizeOptionSummary[];
+  framingOptions: FramingOptionSummary[];
   editable: boolean;
 };
 
@@ -37,6 +46,7 @@ export function ProductConfiguration({
   tags: initialTags,
   collections: initialCollections,
   sizeOptions: initialSizeOptions,
+  framingOptions: initialFramingOptions,
   editable,
 }: ProductConfigurationProps) {
   const shopify = useAppBridge();
@@ -73,6 +83,8 @@ export function ProductConfiguration({
 
   const [sizeOptions, setSizeOptions] = useState(initialSizeOptions);
 
+  const [framingOptions, setFramingOptions] = useState(initialFramingOptions);
+
   const isDirty =
     productTitle !== initialProductTitle ||
     productDescription !== initialProductDescription ||
@@ -80,7 +92,14 @@ export function ProductConfiguration({
     compareAtPrice !== initialCompareAtPrice ||
     JSON.stringify(tags) !== JSON.stringify(initialTags) ||
     JSON.stringify(collectionIds) !== JSON.stringify(initialCollectionIds) ||
-    JSON.stringify(sizeOptions) !== JSON.stringify(initialSizeOptions);
+    JSON.stringify(sizeOptions) !== JSON.stringify(initialSizeOptions) ||
+    JSON.stringify(framingOptions) !== JSON.stringify(initialFramingOptions);
+
+  // A soft heads-up, not a hard block — Size × Framing is a cartesian
+  // product of real Shopify variants, so a merchant adding many of each
+  // can end up with an unwieldy matrix without realizing it.
+  const variantCount =
+    Math.max(sizeOptions.length, 1) * Math.max(framingOptions.length, 1);
 
   const updateSizeOption = (
     index: number,
@@ -108,6 +127,36 @@ export function ProductConfiguration({
 
   const removeSizeOption = (index: number) => {
     setSizeOptions((rows) => rows.filter((_, rowIndex) => rowIndex !== index));
+  };
+
+  const updateFramingOption = (
+    index: number,
+    patch: Partial<FramingOptionSummary>,
+  ) => {
+    setFramingOptions((rows) =>
+      rows.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, ...patch } : row,
+      ),
+    );
+  };
+
+  const addFramingOption = () => {
+    setFramingOptions((rows) => [
+      ...rows,
+      {
+        id: `new-${Date.now()}`,
+        label: "",
+        priceDelta: "0",
+        compareAtPriceDelta: "",
+        requiresShipping: true,
+      },
+    ]);
+  };
+
+  const removeFramingOption = (index: number) => {
+    setFramingOptions((rows) =>
+      rows.filter((_, rowIndex) => rowIndex !== index),
+    );
   };
 
   const removeTag = (tag: string) => {
@@ -171,6 +220,12 @@ export function ProductConfiguration({
         type="hidden"
         name="sizesJson"
         value={JSON.stringify(sizeOptions)}
+      />
+
+      <input
+        type="hidden"
+        name="framingJson"
+        value={JSON.stringify(framingOptions)}
       />
 
       <s-stack direction="block" gap="base">
@@ -340,6 +395,123 @@ export function ProductConfiguration({
                   Add size
                 </s-button>
               </s-stack>
+            ) : null}
+          </s-stack>
+        </s-section>
+
+        <s-section heading="Framing">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              Adds a second, independent variant choice on top of sizes —
+              e.g. "Unframed", "Framed - Black", "Framed - Natural Wood".
+              Price adjustment is added on top of whichever size the
+              customer picks. Turn on "Ships physically" for any option
+              that's a real framed product, not a digital file — leave it
+              off for an unframed/digital choice.
+            </s-paragraph>
+
+            {framingOptions.length > 0 ? (
+              <s-stack direction="block" gap="small">
+                {framingOptions.map((row, index) => (
+                  <s-query-container key={row.id}>
+                    <s-grid
+                      gridTemplateColumns="@container (inline-size > 720px) 1.5fr 1fr 1fr auto auto, 1fr"
+                      gap="small"
+                      alignItems="end"
+                    >
+                      <s-text-field
+                        label="Name"
+                        value={row.label}
+                        onInput={(event: Event) =>
+                          updateFramingOption(index, {
+                            label: eventValue(event),
+                          })
+                        }
+                        placeholder="e.g. Framed - Black"
+                        disabled={!editable}
+                        autocomplete="off"
+                      />
+
+                      <s-number-field
+                        label="Price adjustment"
+                        value={row.priceDelta}
+                        onInput={(event: Event) =>
+                          updateFramingOption(index, {
+                            priceDelta: eventValue(event),
+                          })
+                        }
+                        step={0.01}
+                        prefix="$"
+                        disabled={!editable}
+                        autocomplete="off"
+                      />
+
+                      <s-number-field
+                        label="Compare-at adjustment"
+                        value={row.compareAtPriceDelta}
+                        onInput={(event: Event) =>
+                          updateFramingOption(index, {
+                            compareAtPriceDelta: eventValue(event),
+                          })
+                        }
+                        step={0.01}
+                        prefix="$"
+                        disabled={!editable}
+                        autocomplete="off"
+                      />
+
+                      <s-checkbox
+                        label="Ships physically"
+                        checked={row.requiresShipping}
+                        disabled={!editable}
+                        onChange={(event: Event) => {
+                          const target = event.currentTarget as {
+                            checked?: boolean;
+                          } | null;
+
+                          updateFramingOption(index, {
+                            requiresShipping: Boolean(target?.checked),
+                          });
+                        }}
+                      />
+
+                      {editable ? (
+                        <s-button
+                          variant="tertiary"
+                          tone="critical"
+                          onClick={() => removeFramingOption(index)}
+                          accessibilityLabel={`Remove ${row.label || "this framing option"}`}
+                        >
+                          Remove
+                        </s-button>
+                      ) : null}
+                    </s-grid>
+                  </s-query-container>
+                ))}
+              </s-stack>
+            ) : (
+              <s-text color="subdued">
+                No framing options yet — sizes (if any) publish on their
+                own.
+              </s-text>
+            )}
+
+            {editable ? (
+              <s-stack direction="inline" gap="base">
+                <s-button variant="secondary" onClick={addFramingOption}>
+                  Add framing option
+                </s-button>
+              </s-stack>
+            ) : null}
+
+            {variantCount > 40 ? (
+              <s-banner tone="warning">
+                <s-paragraph>
+                  {sizeOptions.length || 1} size(s) × {framingOptions.length || 1}{" "}
+                  framing option(s) creates {variantCount} variants on this
+                  product — consider trimming either list.
+                </s-paragraph>
+              </s-banner>
             ) : null}
           </s-stack>
         </s-section>
