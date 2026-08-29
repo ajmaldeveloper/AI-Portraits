@@ -196,6 +196,12 @@ export async function getStyleForShop(shop: string, styleId: string) {
         },
       },
 
+      sizeOptions: {
+        orderBy: {
+          position: "asc",
+        },
+      },
+
       assets: {
         orderBy: {
           position: "asc",

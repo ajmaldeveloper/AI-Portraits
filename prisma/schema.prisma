@@ -114,6 +114,7 @@ model Style {
   fields      StyleField[]
   assets      StyleAsset[]
   generations Generation[]
+  sizeOptions StyleSizeOption[]
 
   @@index([shop, status])
   @@index([shop, createdAt])
@@ -253,29 +254,35 @@ model ShopGenerationDefaults {
   updatedAt DateTime @updatedAt
 }
 
-// Shop-wide list of print/download sizes offered on every published
-// product (Small/Medium/Large-style). scalePercent is applied against
-// the AI's native output resolution at serve time (see
-// media.style-assets.$assetId.ts) — 100 means the untouched original
-// bytes, anything lower is downscaled on read. priceDelta is added to
-// a Style's basePrice for that size's variant. id is the stable key
-// Style.productSettings.sizeVariants matches against on republish, so
-// renaming a label later renames the existing Shopify variant instead
-// of deleting and recreating it.
-model ShopSizeOption {
+// Per-style list of print/download size variants — configured on the
+// Product tab, not shop-wide. Each becomes its own Shopify variant at
+// publish time, with its own price/compareAtPrice (no product uses
+// this at all until a merchant explicitly adds a size here — an empty
+// list means "single-variant product," same as before this existed).
+// scalePercent is applied against the AI's native output resolution at
+// serve time (see media.style-assets.$assetId.ts) — 100 means the
+// untouched original bytes, anything lower is downscaled on read. id
+// is the stable key Style.productSettings.sizeVariants matches against
+// on republish, so renaming a label later renames the existing Shopify
+// variant instead of deleting and recreating it.
+model StyleSizeOption {
   id String @id @default(cuid())
 
-  shop String
+  styleId String
 
-  label        String
-  scalePercent Int
-  priceDelta   Decimal @default(0)
-  position     Int     @default(0)
+  label          String
+  scalePercent   Int
+  price          Decimal
+  compareAtPrice Decimal?
+  position       Int      @default(0)
+
+  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([shop, position])
+  @@unique([styleId, label])
+  @@index([styleId, position])
 }
 
 // Shopify's standard offline/online session model remains independent from

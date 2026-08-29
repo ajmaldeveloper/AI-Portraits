@@ -5,7 +5,6 @@ import { authenticate } from "../../shopify.server";
 import { assertCanPublishStyle } from "../billing/billing.server";
 import { createSignedStyleAssetUrl } from "../media/media-signing.server";
 import { findOnlineStorePublicationId } from "../shopify/publications.server";
-import { getSizeOptions } from "../settings/size-options.server";
 import { requireStyleForShop } from "./style.server";
 import {
   isStylePublishReady,
@@ -200,7 +199,14 @@ async function upsertShopifyProduct(
 
   const productSettings = jsonObject(style.productSettings);
 
-  const sizeOptions = await getSizeOptions(style.shop);
+  // Per-style, opt-in — an empty list (the common case, and every
+  // style before this feature existed) publishes as the original
+  // single "Default Title" variant, exactly as before. A merchant adds
+  // rows on the Product tab to turn this into a real size/variant
+  // picker with its own price per size.
+  const sizeOptions = style.sizeOptions;
+
+  const hasSizes = sizeOptions.length > 0;
 
   const existingSizeVariants = Array.isArray(productSettings.sizeVariants)
     ? (productSettings.sizeVariants as unknown[]).filter(
@@ -215,6 +221,14 @@ async function upsertShopifyProduct(
   const existingVariantIdBySizeOption = new Map(
     existingSizeVariants.map((entry) => [entry.sizeOptionId, entry.variantId]),
   );
+
+  // Legacy path — the single variant a no-sizes product already has
+  // from before this feature (or still has, if it never opted in).
+  const legacyVariantId =
+    typeof productSettings.defaultVariantId === "string"
+      ? productSettings.defaultVariantId
+      : (existingSizeVariants.find((entry) => entry.sizeOptionId === "default")
+          ?.variantId ?? null);
 
   // Already-attached assets are normally referenced by their known
   // Shopify media ID (kept as-is), and new ones submitted by URL —
@@ -272,41 +286,50 @@ async function upsertShopifyProduct(
         },
       ],
 
-      // One "Size" option per shop-wide ShopSizeOption — every Style
-      // publishes with the shop's configured print sizes as real
-      // variants (see getSizeOptions; it always returns at least a
-      // built-in Small/Medium/Large default, so this never falls back
-      // to a single-variant product).
-      productOptions: [
-        {
-          name: "Size",
-          values: sizeOptions.map((option) => ({ name: option.label })),
-        },
-      ],
+      // One "Size" option per StyleSizeOption the merchant configured
+      // on the Product tab — or, if none, Shopify's own "Title"/
+      // "Default Title" convention for a plain single-variant product
+      // (productSet still requires an explicit option/optionValues
+      // even for that simple case).
+      productOptions: hasSizes
+        ? [
+            {
+              name: "Size",
+              values: sizeOptions.map((option) => ({ name: option.label })),
+            },
+          ]
+        : [{ name: "Title", values: [{ name: "Default Title" }] }],
 
-      variants: sizeOptions.map((option) => {
-        const existingVariantId = options.forceRecreate
-          ? null
-          : (existingVariantIdBySizeOption.get(option.id) ?? null);
+      variants: hasSizes
+        ? sizeOptions.map((option) => {
+            const existingVariantId = options.forceRecreate
+              ? null
+              : (existingVariantIdBySizeOption.get(option.id) ?? null);
 
-        const priceDelta = Number(option.priceDelta) || 0;
-
-        const price = (Number(style.basePrice) + priceDelta).toFixed(2);
-
-        const compareAtPrice = style.compareAtPrice
-          ? (Number(style.compareAtPrice) + priceDelta).toFixed(2)
-          : null;
-
-        return {
-          ...(existingVariantId ? { id: existingVariantId } : {}),
-          price,
-          compareAtPrice,
-          optionValues: [{ optionName: "Size", name: option.label }],
-          // Digital delivery only — see billing/roadmap notes elsewhere;
-          // no physical fulfillment exists in this app yet.
-          inventoryItem: { requiresShipping: false },
-        };
-      }),
+            return {
+              ...(existingVariantId ? { id: existingVariantId } : {}),
+              price: option.price.toString(),
+              compareAtPrice: option.compareAtPrice
+                ? option.compareAtPrice.toString()
+                : null,
+              optionValues: [{ optionName: "Size", name: option.label }],
+              // Digital delivery only — no physical fulfillment exists
+              // in this app yet.
+              inventoryItem: { requiresShipping: false },
+            };
+          })
+        : [
+            {
+              ...(!options.forceRecreate && legacyVariantId
+                ? { id: legacyVariantId }
+                : {}),
+              price: style.basePrice.toString(),
+              compareAtPrice: style.compareAtPrice
+                ? style.compareAtPrice.toString()
+                : null,
+              optionValues: [{ optionName: "Title", name: "Default Title" }],
+            },
+          ],
 
       // Always synced, even when empty — the gallery IS the product's
       // media now (no separate "select this one" step), so an empty
@@ -408,31 +431,54 @@ async function upsertShopifyProduct(
     throw new Error("Shopify did not return a product for this Style.");
   }
 
-  const sizeVariants: SizeVariantMapping[] = sizeOptions
-    .map((option) => {
-      const matchingNode = product.variants.nodes.find((node) =>
-        node.selectedOptions.some(
-          (selected) =>
-            selected.name === "Size" && selected.value === option.label,
-        ),
-      );
+  // The legacy single-variant path is still represented as a one-entry
+  // sizeVariants list (a synthetic "default" key, scalePercent 100) so
+  // every downstream consumer (app-proxy routes, storefront JS) can
+  // treat "has sizes" and "doesn't" identically — there's always at
+  // least one size to resolve a result-image URL against.
+  const sizeVariants: SizeVariantMapping[] = hasSizes
+    ? sizeOptions
+        .map((option) => {
+          const matchingNode = product.variants.nodes.find((node) =>
+            node.selectedOptions.some(
+              (selected) =>
+                selected.name === "Size" && selected.value === option.label,
+            ),
+          );
 
-      const variantId =
-        matchingNode?.id ?? existingVariantIdBySizeOption.get(option.id);
+          const variantId =
+            matchingNode?.id ?? existingVariantIdBySizeOption.get(option.id);
 
-      if (!variantId) {
-        return null;
-      }
+          if (!variantId) {
+            return null;
+          }
 
-      return {
-        sizeOptionId: option.id,
-        variantId,
-        numericVariantId: numericIdFromGid(variantId),
-        label: option.label,
-        scalePercent: option.scalePercent,
-      };
-    })
-    .filter((entry): entry is SizeVariantMapping => entry !== null);
+          return {
+            sizeOptionId: option.id,
+            variantId,
+            numericVariantId: numericIdFromGid(variantId),
+            label: option.label,
+            scalePercent: option.scalePercent,
+          };
+        })
+        .filter((entry): entry is SizeVariantMapping => entry !== null)
+    : (() => {
+        const variantId = product.variants.nodes[0]?.id ?? legacyVariantId;
+
+        if (!variantId) {
+          return [];
+        }
+
+        return [
+          {
+            sizeOptionId: "default",
+            variantId,
+            numericVariantId: numericIdFromGid(variantId),
+            label: "Default Title",
+            scalePercent: 100,
+          },
+        ];
+      })();
 
   // New media is appended after the already-known media we referenced by
   // id, and Shopify returns product media sorted by position, so the

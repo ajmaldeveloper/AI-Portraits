@@ -6,6 +6,10 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { ProductConfiguration } from "../components/styles/product-configuration";
 import {
+  type SaveStyleSizeOptionInput,
+  saveStyleSizeOptions,
+} from "../services/styles/style-size-options.server";
+import {
   requireStyleForShop,
   styleCanBeEdited,
   updateStyleDraft,
@@ -206,6 +210,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     tags: stringArray(style.tags),
 
     collections: await resolveCollections(admin, collectionIds),
+
+    sizeOptions: style.sizeOptions.map((option) => ({
+      id: option.id,
+      label: option.label,
+      scalePercent: option.scalePercent,
+      price: option.price.toString(),
+      compareAtPrice: option.compareAtPrice?.toString() ?? "",
+    })),
   };
 };
 
@@ -255,6 +267,42 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
     const collectionIds = parseCollectionIds(formData.get("collectionIds"));
 
+    const sizesRaw = formData.get("sizesJson");
+
+    let sizesParsed: unknown;
+
+    try {
+      sizesParsed = JSON.parse(String(sizesRaw ?? "[]"));
+    } catch {
+      return { error: "Could not read the submitted sizes." };
+    }
+
+    if (!Array.isArray(sizesParsed)) {
+      return { error: "Could not read the submitted sizes." };
+    }
+
+    const sizeInputs: SaveStyleSizeOptionInput[] = sizesParsed.map((entry) => {
+      const row = (entry ?? {}) as Record<string, unknown>;
+
+      // "new-*" ids are rows added client-side this session, not real
+      // saved rows yet — dropping the id here makes saveStyleSizeOptions
+      // create them fresh.
+      const id =
+        typeof row.id === "string" && !row.id.startsWith("new-")
+          ? row.id
+          : undefined;
+
+      const compareAtPriceRaw = String(row.compareAtPrice ?? "").trim();
+
+      return {
+        id,
+        label: String(row.label ?? ""),
+        scalePercent: Number(row.scalePercent),
+        price: String(row.price ?? ""),
+        compareAtPrice: compareAtPriceRaw || null,
+      };
+    });
+
     await updateStyleDraft(session.shop, styleId, {
       productTitle,
       productDescription,
@@ -263,6 +311,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       tags,
       collectionIds,
     });
+
+    await saveStyleSizeOptions(session.shop, styleId, sizeInputs);
 
     return redirect(`/app/styles/${styleId}/product?notice=product-saved`);
   } catch (error) {
@@ -328,6 +378,7 @@ export default function StyleProduct() {
         compareAtPrice={data.compareAtPrice}
         tags={data.tags}
         collections={data.collections}
+        sizeOptions={data.sizeOptions}
         editable={data.editable}
       />
 

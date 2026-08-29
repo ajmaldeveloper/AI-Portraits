@@ -86,13 +86,18 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     hasPendingChanges,
 
-    // A style published before print sizes existed has no
-    // sizeVariants recorded yet — its next update replaces the single
-    // legacy variant with the shop's configured sizes, which can break
-    // an already-open cart/checkout referencing the old variant id.
+    // Sizes were just added on the Product tab to a product that's
+    // still on its original single "Default Title" variant (or vice
+    // versa — the option changing at all forces this either way) — the
+    // next update replaces that variant with the new size variants,
+    // which can break an already-open cart/checkout referencing the
+    // old variant id.
     needsSizeVariantMigration:
       style.status === "PUBLISHED" &&
-      parseSizeVariants(style.productSettings).length === 0,
+      style.sizeOptions.length > 0 &&
+      !parseSizeVariants(style.productSettings).some(
+        (entry) => entry.sizeOptionId !== "default",
+      ),
 
     published: url.searchParams.get("published") === "1",
 

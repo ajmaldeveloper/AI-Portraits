@@ -10,6 +10,14 @@ export type CollectionSummary = {
   handle: string | null;
 };
 
+export type SizeOptionSummary = {
+  id: string;
+  label: string;
+  scalePercent: number;
+  price: string;
+  compareAtPrice: string;
+};
+
 type ProductConfigurationProps = {
   productTitle: string;
   productDescription: string;
@@ -17,6 +25,7 @@ type ProductConfigurationProps = {
   compareAtPrice: string;
   tags: string[];
   collections: CollectionSummary[];
+  sizeOptions: SizeOptionSummary[];
   editable: boolean;
 };
 
@@ -27,6 +36,7 @@ export function ProductConfiguration({
   compareAtPrice: initialCompareAtPrice,
   tags: initialTags,
   collections: initialCollections,
+  sizeOptions: initialSizeOptions,
   editable,
 }: ProductConfigurationProps) {
   const shopify = useAppBridge();
@@ -61,13 +71,44 @@ export function ProductConfiguration({
     (collection) => collection.id,
   );
 
+  const [sizeOptions, setSizeOptions] = useState(initialSizeOptions);
+
   const isDirty =
     productTitle !== initialProductTitle ||
     productDescription !== initialProductDescription ||
     basePrice !== initialBasePrice ||
     compareAtPrice !== initialCompareAtPrice ||
     JSON.stringify(tags) !== JSON.stringify(initialTags) ||
-    JSON.stringify(collectionIds) !== JSON.stringify(initialCollectionIds);
+    JSON.stringify(collectionIds) !== JSON.stringify(initialCollectionIds) ||
+    JSON.stringify(sizeOptions) !== JSON.stringify(initialSizeOptions);
+
+  const updateSizeOption = (
+    index: number,
+    patch: Partial<SizeOptionSummary>,
+  ) => {
+    setSizeOptions((rows) =>
+      rows.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, ...patch } : row,
+      ),
+    );
+  };
+
+  const addSizeOption = () => {
+    setSizeOptions((rows) => [
+      ...rows,
+      {
+        id: `new-${Date.now()}`,
+        label: "",
+        scalePercent: 100,
+        price: basePrice,
+        compareAtPrice,
+      },
+    ]);
+  };
+
+  const removeSizeOption = (index: number) => {
+    setSizeOptions((rows) => rows.filter((_, rowIndex) => rowIndex !== index));
+  };
 
   const removeTag = (tag: string) => {
     setTags((current) => current.filter((existing) => existing !== tag));
@@ -124,6 +165,12 @@ export function ProductConfiguration({
         type="hidden"
         name="collectionIds"
         value={JSON.stringify(collectionIds)}
+      />
+
+      <input
+        type="hidden"
+        name="sizesJson"
+        value={JSON.stringify(sizeOptions)}
       />
 
       <s-stack direction="block" gap="base">
@@ -190,6 +237,110 @@ export function ProductConfiguration({
               it always shows as available to add to cart — no inventory count
               to track.
             </s-text>
+          </s-stack>
+        </s-section>
+
+        <s-section heading="Sizes">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              Add sizes to sell this as a real Shopify variant picker — each
+              becomes its own variant with its own price and compare-at
+              price. Scale is a percentage of the AI's original output; 100%
+              is the original resolution, anything lower is resized down
+              (never up, so nothing looks soft). Leave empty for a single,
+              one-size product.
+            </s-paragraph>
+
+            {sizeOptions.length > 0 ? (
+              <s-stack direction="block" gap="small">
+                {sizeOptions.map((row, index) => (
+                  <s-query-container key={row.id}>
+                    <s-grid
+                      gridTemplateColumns="@container (inline-size > 640px) 1.5fr 1fr 1fr 1fr auto, 1fr"
+                      gap="small"
+                      alignItems="end"
+                    >
+                      <s-text-field
+                        label="Name"
+                        value={row.label}
+                        onInput={(event: Event) =>
+                          updateSizeOption(index, { label: eventValue(event) })
+                        }
+                        placeholder="e.g. Medium"
+                        disabled={!editable}
+                        autocomplete="off"
+                      />
+
+                      <s-number-field
+                        label="Scale %"
+                        value={String(row.scalePercent)}
+                        onInput={(event: Event) =>
+                          updateSizeOption(index, {
+                            scalePercent: Number(eventValue(event)) || 0,
+                          })
+                        }
+                        min={1}
+                        max={100}
+                        step={1}
+                        disabled={!editable}
+                        autocomplete="off"
+                      />
+
+                      <s-number-field
+                        label="Price"
+                        value={row.price}
+                        onInput={(event: Event) =>
+                          updateSizeOption(index, { price: eventValue(event) })
+                        }
+                        min={0}
+                        step={0.01}
+                        prefix="$"
+                        disabled={!editable}
+                        autocomplete="off"
+                      />
+
+                      <s-number-field
+                        label="Compare-at price"
+                        value={row.compareAtPrice}
+                        onInput={(event: Event) =>
+                          updateSizeOption(index, {
+                            compareAtPrice: eventValue(event),
+                          })
+                        }
+                        min={0}
+                        step={0.01}
+                        prefix="$"
+                        disabled={!editable}
+                        autocomplete="off"
+                      />
+
+                      {editable ? (
+                        <s-button
+                          variant="tertiary"
+                          tone="critical"
+                          onClick={() => removeSizeOption(index)}
+                          accessibilityLabel={`Remove ${row.label || "this size"}`}
+                        >
+                          Remove
+                        </s-button>
+                      ) : null}
+                    </s-grid>
+                  </s-query-container>
+                ))}
+              </s-stack>
+            ) : (
+              <s-text color="subdued">
+                No sizes yet — this publishes as a single, one-size product.
+              </s-text>
+            )}
+
+            {editable ? (
+              <s-stack direction="inline" gap="base">
+                <s-button variant="secondary" onClick={addSizeOption}>
+                  Add size
+                </s-button>
+              </s-stack>
+            ) : null}
           </s-stack>
         </s-section>
 
