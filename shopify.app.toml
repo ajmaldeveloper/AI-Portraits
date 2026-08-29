@@ -29,18 +29,21 @@ api_version = "2026-07"
   uri = "/webhooks/app/scopes_update"
   topics = [ "app/scopes_update" ]
 
-# The three mandatory GDPR compliance webhooks (customers/data_request,
-# customers/redact, shop/redact) are NOT declared here — the CLI
-# rejects them as regular subscription topics. Shopify triggers them
-# for every app automatically; the endpoint URLs are registered
-# separately in the Partner Dashboard under App setup > Compliance
-# webhooks, pointing at:
-#   {application_url}/webhooks/customers/data_request
-#   {application_url}/webhooks/customers/redact
-#   {application_url}/webhooks/shop/redact
-# The route files handling these (app/routes/webhooks.customers.*.tsx,
-# webhooks.shop.redact.tsx) are unaffected by this and still work once
-# those URLs are set.
+  # The three mandatory GDPR compliance webhooks — declared via
+  # `compliance_topics`, not `topics` (that's what the CLI rejects
+  # them under). Pushed to Partner Dashboard automatically on the next
+  # `shopify app deploy`, same as every sibling app in this account.
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/customers/data_request"
+  compliance_topics = [ "customers/data_request" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/customers/redact"
+  compliance_topics = [ "customers/redact" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/shop/redact"
+  compliance_topics = [ "shop/redact" ]
 
 [app_proxy]
 url = "https://winslet-ai-portraits.fly.dev/app-proxy"
