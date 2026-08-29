@@ -1,0 +1,298 @@
+.aig-root {
+  --aig-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --aig-text: #1a1a1a;
+  --aig-muted: #6d7175;
+  --aig-border: #d1d1d1;
+  --aig-error: #d82c0d;
+  --aig-focus: #005bd3;
+  --aig-radius: 8px;
+
+  display: block;
+  max-width: 480px;
+  margin: 24px 0;
+  font-family: var(--aig-font);
+  color: var(--aig-text);
+}
+
+.aig-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.aig-noscript {
+  padding: 12px 14px;
+  color: var(--aig-muted);
+  font-size: 14px;
+  border: 1px solid var(--aig-border);
+  border-radius: var(--aig-radius);
+}
+
+.aig-heading {
+  margin: 0 0 16px;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.aig-field {
+  margin-bottom: 18px;
+}
+
+.aig-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.aig-required {
+  color: var(--aig-error);
+}
+
+.aig-control {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 14px;
+  font-family: var(--aig-font);
+  font-size: 15px;
+  color: var(--aig-text);
+  background: #ffffff;
+  border: 1px solid var(--aig-border);
+  border-radius: var(--aig-radius);
+  outline: none;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.aig-control:focus {
+  border-color: var(--aig-focus);
+  box-shadow: 0 0 0 3px rgb(0 91 211 / 15%);
+}
+
+textarea.aig-control {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.aig-help {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--aig-muted);
+}
+
+.aig-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.aig-checkbox-row input {
+  width: 18px;
+  height: 18px;
+}
+
+.aig-file-upload {
+  position: relative;
+}
+
+/* A native <input type="file"> renders as an OS-styled, unstylable
+   button + filename pair — kept in the DOM (so it stays focusable and
+   is what actually participates in the form) but made visually
+   invisible, with a real drag-and-drop dropzone driving it instead. */
+.aig-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* One box handles both the empty prompt and the selected-file state
+   (its content is swapped, not the element itself), so it stays the
+   same persistent click/drop target throughout. */
+.aig-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 22px 16px;
+  color: var(--aig-muted);
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  background: #ffffff;
+  border: 1px dashed var(--aig-border);
+  border-radius: var(--aig-radius);
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.aig-dropzone:hover,
+.aig-dropzone:focus-visible,
+.aig-dropzone--dragover {
+  border-color: var(--aig-focus);
+}
+
+.aig-dropzone--dragover {
+  background: #f6f6f7;
+}
+
+.aig-dropzone--filled {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  text-align: left;
+  border-style: solid;
+  background: #f6f6f7;
+}
+
+.aig-dropzone-icon {
+  width: 26px;
+  height: 26px;
+  margin-bottom: 2px;
+  color: var(--aig-muted);
+}
+
+.aig-dropzone strong {
+  color: var(--aig-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.aig-dropzone > span {
+  color: var(--aig-muted);
+  font-size: 13px;
+}
+
+.aig-dropzone-browse {
+  padding: 7px 14px;
+  margin-top: 4px;
+  font-family: var(--aig-font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aig-text);
+  cursor: pointer;
+  background: #f6f6f7;
+  border: 1px solid var(--aig-border);
+  border-radius: calc(var(--aig-radius) - 2px);
+}
+
+.aig-dropzone-file-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  color: var(--aig-muted);
+}
+
+.aig-dropzone-filename {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  color: var(--aig-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aig-dropzone-clear {
+  flex: 0 0 auto;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--aig-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  place-items: center;
+}
+
+.aig-dropzone-clear:hover {
+  color: var(--aig-text);
+  background: #ffffff;
+}
+
+/* Hidden until a photo is selected (see .aig-personalize[hidden] in the
+   JS) — an optional freeform note next to the upload, not a merchant
+   field, so it stays visually secondary to the fields above it. */
+.aig-personalize {
+  margin-top: 10px;
+}
+
+.aig-submit {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 13px;
+  font-family: var(--aig-font);
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  cursor: pointer;
+  background: #1a1a1a;
+  border: none;
+  border-radius: var(--aig-radius);
+  transition: opacity 140ms ease;
+}
+
+.aig-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.aig-error {
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: var(--aig-error);
+  background: #fff4f4;
+  border: 1px solid #f6c6c6;
+  border-radius: var(--aig-radius);
+}
+
+.aig-result {
+  text-align: center;
+}
+
+.aig-result img {
+  max-width: 100%;
+  border-radius: var(--aig-radius);
+}
+
+.aig-spinner {
+  width: 28px;
+  height: 28px;
+  margin: 24px auto;
+  border: 3px solid #e1e1e1;
+  border-top-color: var(--aig-focus);
+  border-radius: 50%;
+  animation: aig-spin 800ms linear infinite;
+}
+
+.aig-status-text {
+  margin: 0 0 24px;
+  color: var(--aig-muted);
+  text-align: center;
+}
+
+@keyframes aig-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

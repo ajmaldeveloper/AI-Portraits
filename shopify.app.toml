@@ -1,0 +1,53 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "029bdc7c4e2d4083740c4b3c634e4274"
+application_url = "https://winslet-ai-portraits.fly.dev"
+embedded = true
+name = "Winslet AI Portraits"
+
+[access_scopes]
+scopes = "write_products,write_publications,read_files"
+
+[product.metafields.app.style_id]
+type = "single_line_text_field"
+name = "Winslet AI Portraits Style ID"
+description = "Links a Shopify product to its Winslet AI Portraits style."
+
+  [product.metafields.app.style_id.access]
+  admin = "merchant_read"
+  storefront = "public_read"
+
+[webhooks]
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+# The three mandatory GDPR compliance webhooks (customers/data_request,
+# customers/redact, shop/redact) are NOT declared here — the CLI
+# rejects them as regular subscription topics. Shopify triggers them
+# for every app automatically; the endpoint URLs are registered
+# separately in the Partner Dashboard under App setup > Compliance
+# webhooks, pointing at:
+#   {application_url}/webhooks/customers/data_request
+#   {application_url}/webhooks/customers/redact
+#   {application_url}/webhooks/shop/redact
+# The route files handling these (app/routes/webhooks.customers.*.tsx,
+# webhooks.shop.redact.tsx) are unaffected by this and still work once
+# those URLs are set.
+
+[app_proxy]
+url = "https://winslet-ai-portraits.fly.dev/app-proxy"
+subpath = "ai-art-studio"
+prefix = "apps"
+
+[auth]
+redirect_urls = [ "https://winslet-ai-portraits.fly.dev/api/auth" ]
+
+[build]
+automatically_update_urls_on_dev = true

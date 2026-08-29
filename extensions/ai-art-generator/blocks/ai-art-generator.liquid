@@ -1,0 +1,74 @@
+{%- comment -%}
+  Renders on a product page only, and only when that product is linked
+  to a Winslet AI Portraits Style (via the app's style_id metafield, set
+  automatically when a Style is published). On any other product, or
+  any other template, this renders nothing at all — no script/style
+  tags, no fetch.
+
+  Uses the fully-qualified app--{numeric app id} namespace rather than
+  the product.metafields.app.* shorthand — the shorthand alias didn't
+  resolve reliably in testing (came back blank) even though the
+  metafield value itself was confirmed present and correctly scoped to
+  this app via the Admin API. The explicit namespace worked
+  immediately. This ties the block to this app's specific numeric ID,
+  which is fine since a theme extension always ships together with the
+  app that owns it.
+{%- endcomment -%}
+{%- assign ai_style_id = product.metafields["app--412346482689"]["style_id"].value -%}
+{%- if product and ai_style_id != blank -%}
+  <link
+    rel="preload"
+    href="{{ 'ai-art-generator.css' | asset_url }}"
+    as="style"
+    onload="this.onload=null;this.rel='stylesheet'"
+  >
+  <noscript>{{ 'ai-art-generator.css' | asset_url | stylesheet_tag }}</noscript>
+
+  <script
+    type="module"
+    defer
+    src="{{ 'ai-art-generator.js' | asset_url }}"
+  ></script>
+
+  <ai-art-generator
+    id="ai-art-generator-{{ block.id }}"
+    class="aig-root"
+    data-aig-style-id="{{ ai_style_id | escape }}"
+    data-aig-proxy-root="/apps/ai-art-studio"
+    data-aig-heading="{{ block.settings.heading | escape }}"
+    data-aig-button-label="{{ block.settings.button_label | escape }}"
+    data-aig-design-mode="{% if request.design_mode %}true{% else %}false{% endif %}"
+    {{ block.shopify_attributes }}
+  >
+    <span class="aig-visually-hidden">Loading personalization form…</span>
+
+    <noscript>
+      <p class="aig-noscript">
+        Enable JavaScript in your browser to personalize this product.
+      </p>
+    </noscript>
+  </ai-art-generator>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "AI art personalization",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Personalize this product"
+    },
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Generate button text",
+      "default": "Generate my artwork"
+    }
+  ],
+  "tag": "div",
+  "class": "aig-block-wrapper"
+}
+{% endschema %}

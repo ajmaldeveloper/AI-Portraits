@@ -1,0 +1,258 @@
+// AI Art Studio database schema.
+//
+// Shopify owns commerce:
+// products, variants, collections, checkout, payments and orders.
+//
+// AI Art Studio owns:
+// styles, prompts, customer input definitions, generation jobs,
+// generated assets and Shopify product linkage.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum StyleStatus {
+  DRAFT
+  PUBLISHING
+  PUBLISHED
+  PUBLISH_ERROR
+  UNPUBLISHING
+  UNPUBLISHED
+}
+
+enum StyleFieldType {
+  IMAGE
+  TEXT
+  TEXTAREA
+  SELECT
+  TOGGLE
+  NUMBER
+  DATE
+}
+
+enum StyleAssetKind {
+  REFERENCE
+  PRODUCT_GENERATED
+  PRODUCT_SELECTED
+  CUSTOMER_UPLOAD
+  CUSTOMER_RESULT
+}
+
+enum GenerationPurpose {
+  STYLE_PRODUCT
+  CUSTOMER_PREVIEW
+  CUSTOMER_FINAL
+}
+
+enum GenerationStatus {
+  QUEUED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model Style {
+  id     String      @id @default(cuid())
+  shop   String
+  name   String
+  status StyleStatus @default(DRAFT)
+
+  // AI transformation configuration.
+  prompt             String  @default("")
+  provider           String  @default("openai")
+  model              String?
+  outputAspectRatio  String  @default("1:1")
+  outputQuality      String  @default("high")
+  previewCount       Int     @default(1)
+  generationSettings Json
+
+  // Shopify product draft configuration.
+  productTitle       String
+  productDescription String  @default("")
+  basePrice          Decimal @default(0)
+  compareAtPrice     Decimal?
+  tags               Json
+  collectionIds      Json
+  productSettings    Json
+
+  // Populated only after Shopify product creation succeeds.
+  shopifyProductId     String?   @unique
+  shopifyProductHandle String?
+  publishedAt          DateTime?
+  publishError         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fields      StyleField[]
+  assets      StyleAsset[]
+  generations Generation[]
+
+  @@index([shop, status])
+  @@index([shop, createdAt])
+}
+
+model StyleField {
+  id           String         @id @default(cuid())
+  styleId      String
+  key          String
+  label        String
+  type         StyleFieldType
+  required     Boolean        @default(false)
+  position     Int            @default(0)
+  placeholder  String?
+  helpText     String?
+  defaultValue String?
+  options      Json?
+  config       Json?
+
+  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([styleId, key])
+  @@index([styleId, position])
+}
+
+model StyleAsset {
+  id           String         @id @default(cuid())
+  styleId      String
+  generationId String?
+  kind         StyleAssetKind
+  storageKey   String?
+  url          String?
+  mimeType     String?
+  width        Int?
+  height       Int?
+  altText      String?
+  position     Int            @default(0)
+
+  // M4 stores merchant-generated product examples here.
+  // Customer production assets will move to object storage.
+  binaryData Bytes?
+
+  // Set once this asset has been attached to the Shopify product's media
+  // gallery by the Publish engine. Lets a retried publish reuse the
+  // existing Shopify media instead of re-uploading and duplicating it.
+  shopifyMediaId String?
+
+  style      Style       @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  generation Generation? @relation(fields: [generationId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([styleId, kind])
+  @@index([generationId])
+}
+
+model Generation {
+  id      String            @id @default(cuid())
+  shop    String
+  styleId String
+  purpose GenerationPurpose
+  status  GenerationStatus  @default(QUEUED)
+
+  provider          String
+  model             String?
+  prompt            String
+  providerRequestId String?
+
+  inputPayload  Json?
+  outputPayload Json?
+  usage         Json?
+  costMicros    BigInt?
+
+  attempt      Int       @default(1)
+  errorCode    String?
+  errorMessage String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  style  Style        @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  assets StyleAsset[]
+
+  @@index([shop, createdAt])
+  @@index([styleId, status])
+}
+
+// Per-shop bring-your-own-key AI provider configuration. The app never
+// supplies its own AI provider credentials to merchants — each shop
+// configures its own provider, model, and API key here. apiKeySecret is
+// encrypted at rest (see app/services/security/secret-box.server.ts);
+// apiKeyLastFour is a display-only hint and is never enough to
+// reconstruct the key.
+model ShopAIProviderSettings {
+  id String @id @default(cuid())
+
+  shop String @unique
+
+  provider String
+  model    String
+
+  apiKeySecret   String
+  apiKeyLastFour String
+
+  // Reserved for provider-specific extras (e.g. a region or project
+  // field some future provider might require). Neither current
+  // provider (OpenAI, Google) needs anything beyond the API key.
+  // Defaulted in application code, not at the DB level (SQLite can't
+  // express a JSON literal default).
+  extraConfig Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Shop-wide defaults for generated image output, applied to every new
+// Style at creation time (Styles no longer expose these per-style — one
+// place to set them, per merchant request). A Style keeps its own copy
+// of the values it was created with, so changing the shop default later
+// does not retroactively change already-created styles.
+model ShopGenerationDefaults {
+  id String @id @default(cuid())
+
+  shop String @unique
+
+  outputAspectRatio String @default("1:1")
+  outputQuality     String @default("high")
+  previewCount      Int    @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Shopify's standard offline/online session model remains independent from
+// merchant-created AI styles. No Shopify product is created when a Style
+// record is created. Product creation happens only during Publish.
