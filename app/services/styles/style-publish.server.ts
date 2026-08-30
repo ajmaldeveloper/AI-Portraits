@@ -447,12 +447,16 @@ async function upsertShopifyProduct(
               })),
               // Made to order from the customer's own upload — there's
               // no real stock to run out of, on any size/framing
-              // combination, so every variant stays untracked and
-              // purchasable regardless. Only Framing ever makes a
-              // variant a real physical product — everything else in
-              // this app is digital.
+              // combination, so every variant always stays purchasable
+              // regardless of on-hand quantity (inventoryPolicy
+              // CONTINUE). Inventory itself stays tracked (not
+              // tracked: false) so the merchant still gets normal
+              // sold-count reporting — CONTINUE is what keeps it from
+              // ever actually blocking a sale, not disabling tracking.
+              // Only Framing ever makes a variant a real physical
+              // product — everything else in this app is digital.
               inventoryItem: {
-                tracked: false,
+                tracked: true,
                 requiresShipping: framingValue?.requiresShipping ?? false,
               },
               inventoryPolicy: "CONTINUE",
@@ -469,7 +473,7 @@ async function upsertShopifyProduct(
                 : null,
               optionValues: [{ optionName: "Title", name: "Default Title" }],
               inventoryItem: {
-                tracked: false,
+                tracked: true,
                 requiresShipping: false,
               },
               inventoryPolicy: "CONTINUE",
