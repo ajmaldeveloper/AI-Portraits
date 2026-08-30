@@ -39,11 +39,22 @@ function sizeValuesOf(option: SizeOptionView): SizeFormState {
 
 type SizeFormErrors = Partial<Record<keyof SizeFormState, string>>;
 
-function validateSizeForm(values: SizeFormState): SizeFormErrors {
+function validateSizeForm(
+  values: SizeFormState,
+  otherLabels: string[],
+): SizeFormErrors {
   const errors: SizeFormErrors = {};
 
-  if (!values.label.trim()) {
+  const label = values.label.trim();
+
+  if (!label) {
     errors.label = "Name is required.";
+  } else if (
+    otherLabels.some(
+      (existing) => existing.toLowerCase() === label.toLowerCase(),
+    )
+  ) {
+    errors.label = "A size with this name already exists.";
   }
 
   const price = Number(values.price);
@@ -141,9 +152,11 @@ function SizeFormFields({
 function AddSizeModal({
   submitting,
   resetSignal,
+  existingLabels,
 }: {
   submitting: boolean;
   resetSignal: number;
+  existingLabels: string[];
 }) {
   const [values, setValues] = useState<SizeFormState>(blankSizeValues);
 
@@ -169,7 +182,7 @@ function AddSizeModal({
       <Form
         method="post"
         onSubmit={(event) => {
-          const validationErrors = validateSizeForm(values);
+          const validationErrors = validateSizeForm(values, existingLabels);
 
           if (Object.keys(validationErrors).length > 0) {
             event.preventDefault();
@@ -234,9 +247,11 @@ function AddSizeModal({
 function EditSizeModal({
   option,
   submitting,
+  otherLabels,
 }: {
   option: SizeOptionView;
   submitting: boolean;
+  otherLabels: string[];
 }) {
   const initialValues = sizeValuesOf(option);
 
@@ -255,7 +270,7 @@ function EditSizeModal({
       <Form
         method="post"
         onSubmit={(event) => {
-          const validationErrors = validateSizeForm(values);
+          const validationErrors = validateSizeForm(values, otherLabels);
 
           if (Object.keys(validationErrors).length > 0) {
             event.preventDefault();
@@ -558,6 +573,7 @@ export function SizeOptionsEditor({
         <AddSizeModal
           submitting={submittingIntent === "addSize"}
           resetSignal={addModalResetKey}
+          existingLabels={sizeOptions.map((option) => option.label)}
         />
       ) : null}
 
@@ -570,6 +586,9 @@ export function SizeOptionsEditor({
                 submittingIntent === "editSize" &&
                 submittingSizeOptionId === option.id
               }
+              otherLabels={sizeOptions
+                .filter((other) => other.id !== option.id)
+                .map((other) => other.label)}
             />
           ))
         : null}

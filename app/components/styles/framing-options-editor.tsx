@@ -45,11 +45,22 @@ function checkedValue(event: Event): boolean {
 
 type FramingFormErrors = Partial<Record<keyof FramingFormState, string>>;
 
-function validateFramingForm(values: FramingFormState): FramingFormErrors {
+function validateFramingForm(
+  values: FramingFormState,
+  otherLabels: string[],
+): FramingFormErrors {
   const errors: FramingFormErrors = {};
 
-  if (!values.label.trim()) {
+  const label = values.label.trim();
+
+  if (!label) {
     errors.label = "Name is required.";
+  } else if (
+    otherLabels.some(
+      (existing) => existing.toLowerCase() === label.toLowerCase(),
+    )
+  ) {
+    errors.label = "A framing option with this name already exists.";
   }
 
   return errors;
@@ -125,9 +136,11 @@ function FramingFormFields({
 function AddFramingModal({
   submitting,
   resetSignal,
+  existingLabels,
 }: {
   submitting: boolean;
   resetSignal: number;
+  existingLabels: string[];
 }) {
   const [values, setValues] = useState<FramingFormState>(blankFramingValues);
 
@@ -148,7 +161,10 @@ function AddFramingModal({
       <Form
         method="post"
         onSubmit={(event) => {
-          const validationErrors = validateFramingForm(values);
+          const validationErrors = validateFramingForm(
+            values,
+            existingLabels,
+          );
 
           if (Object.keys(validationErrors).length > 0) {
             event.preventDefault();
@@ -210,9 +226,11 @@ function AddFramingModal({
 function EditFramingModal({
   option,
   submitting,
+  otherLabels,
 }: {
   option: FramingOptionView;
   submitting: boolean;
+  otherLabels: string[];
 }) {
   const initialValues = framingValuesOf(option);
 
@@ -234,7 +252,7 @@ function EditFramingModal({
       <Form
         method="post"
         onSubmit={(event) => {
-          const validationErrors = validateFramingForm(values);
+          const validationErrors = validateFramingForm(values, otherLabels);
 
           if (Object.keys(validationErrors).length > 0) {
             event.preventDefault();
@@ -539,6 +557,7 @@ export function FramingOptionsEditor({
         <AddFramingModal
           submitting={submittingIntent === "addFraming"}
           resetSignal={addModalResetKey}
+          existingLabels={framingOptions.map((option) => option.label)}
         />
       ) : null}
 
@@ -551,6 +570,9 @@ export function FramingOptionsEditor({
                 submittingIntent === "editFraming" &&
                 submittingFramingOptionId === option.id
               }
+              otherLabels={framingOptions
+                .filter((other) => other.id !== option.id)
+                .map((other) => other.label)}
             />
           ))
         : null}
