@@ -40,11 +40,25 @@ function checkedValue(event: Event): boolean {
   return target?.checked ?? false;
 }
 
+type FramingFormErrors = Partial<Record<keyof FramingFormState, string>>;
+
+function validateFramingForm(values: FramingFormState): FramingFormErrors {
+  const errors: FramingFormErrors = {};
+
+  if (!values.label.trim()) {
+    errors.label = "Name is required.";
+  }
+
+  return errors;
+}
+
 function FramingFormFields({
   values,
+  errors,
   onChange,
 }: {
   values: FramingFormState;
+  errors: FramingFormErrors;
   onChange: (patch: Partial<FramingFormState>) => void;
 }) {
   return (
@@ -57,6 +71,7 @@ function FramingFormFields({
         placeholder="e.g. Framed - Black"
         required
         autocomplete="off"
+        error={errors.label}
       />
 
       <s-query-container>
@@ -113,15 +128,28 @@ function AddFramingModal({
 }) {
   const [values, setValues] = useState<FramingFormState>(blankFramingValues);
 
+  const [errors, setErrors] = useState<FramingFormErrors>({});
+
   const dirty = values.label.trim().length > 0;
 
-  const reset = () => setValues(blankFramingValues);
+  const reset = () => {
+    setValues(blankFramingValues);
+    setErrors({});
+  };
 
   return (
     <s-modal id="add-framing" heading="Add framing option">
       <Form
         method="post"
-        onSubmit={() => {
+        onSubmit={(event) => {
+          const validationErrors = validateFramingForm(values);
+
+          if (Object.keys(validationErrors).length > 0) {
+            event.preventDefault();
+            setErrors(validationErrors);
+            return;
+          }
+
           reset();
           onAdded();
         }}
@@ -131,9 +159,21 @@ function AddFramingModal({
         <s-stack direction="block" gap="base">
           <FramingFormFields
             values={values}
-            onChange={(patch) =>
-              setValues((current) => ({ ...current, ...patch }))
-            }
+            errors={errors}
+            onChange={(patch) => {
+              setValues((current) => ({ ...current, ...patch }));
+              setErrors((current) => {
+                const next = { ...current };
+
+                for (const key of Object.keys(patch) as Array<
+                  keyof FramingFormState
+                >) {
+                  delete next[key];
+                }
+
+                return next;
+              });
+            }}
           />
 
           <s-stack direction="inline" gap="base">
@@ -173,6 +213,8 @@ function EditFramingModal({
 
   const [values, setValues] = useState<FramingFormState>(initialValues);
 
+  const [errors, setErrors] = useState<FramingFormErrors>({});
+
   const isDirty =
     values.label !== initialValues.label ||
     values.priceDelta !== initialValues.priceDelta ||
@@ -184,7 +226,20 @@ function EditFramingModal({
       id={`edit-framing-${option.id}`}
       heading={`Edit ${option.label}`}
     >
-      <Form method="post">
+      <Form
+        method="post"
+        onSubmit={(event) => {
+          const validationErrors = validateFramingForm(values);
+
+          if (Object.keys(validationErrors).length > 0) {
+            event.preventDefault();
+            setErrors(validationErrors);
+            return;
+          }
+
+          setErrors({});
+        }}
+      >
         <input type="hidden" name="intent" value="editFraming" />
 
         <input type="hidden" name="framingOptionId" value={option.id} />
@@ -192,9 +247,21 @@ function EditFramingModal({
         <s-stack direction="block" gap="base">
           <FramingFormFields
             values={values}
-            onChange={(patch) =>
-              setValues((current) => ({ ...current, ...patch }))
-            }
+            errors={errors}
+            onChange={(patch) => {
+              setValues((current) => ({ ...current, ...patch }));
+              setErrors((current) => {
+                const next = { ...current };
+
+                for (const key of Object.keys(patch) as Array<
+                  keyof FramingFormState
+                >) {
+                  delete next[key];
+                }
+
+                return next;
+              });
+            }}
           />
 
           <s-stack direction="inline" gap="base">
@@ -211,7 +278,10 @@ function EditFramingModal({
               variant="secondary"
               commandFor={`edit-framing-${option.id}`}
               command="--hide"
-              onClick={() => setValues(initialValues)}
+              onClick={() => {
+                setValues(initialValues);
+                setErrors({});
+              }}
               disabled={submitting}
             >
               Cancel

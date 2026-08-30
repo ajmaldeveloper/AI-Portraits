@@ -34,11 +34,40 @@ function sizeValuesOf(option: SizeOptionView): SizeFormState {
   };
 }
 
+type SizeFormErrors = Partial<Record<keyof SizeFormState, string>>;
+
+function validateSizeForm(values: SizeFormState): SizeFormErrors {
+  const errors: SizeFormErrors = {};
+
+  if (!values.label.trim()) {
+    errors.label = "Name is required.";
+  }
+
+  const price = Number(values.price);
+
+  if (!values.price.trim() || !Number.isFinite(price) || price <= 0) {
+    errors.price = "Price must be greater than $0.";
+  }
+
+  if (values.compareAtPrice.trim()) {
+    const compareAtPrice = Number(values.compareAtPrice);
+
+    if (Number.isFinite(compareAtPrice) && compareAtPrice <= price) {
+      errors.compareAtPrice =
+        "Compare-at price must be greater than the price.";
+    }
+  }
+
+  return errors;
+}
+
 function SizeFormFields({
   values,
+  errors,
   onChange,
 }: {
   values: SizeFormState;
+  errors: SizeFormErrors;
   onChange: (patch: Partial<SizeFormState>) => void;
 }) {
   return (
@@ -51,6 +80,7 @@ function SizeFormFields({
         placeholder="e.g. Medium"
         required
         autocomplete="off"
+        error={errors.label}
       />
 
       <s-number-field
@@ -65,7 +95,7 @@ function SizeFormFields({
         step={1}
         suffix="%"
         autocomplete="off"
-        details="100% is full resolution. Lower resizes down for a smaller size."
+        details="A rough guide: 100% ≈ Large, 80% ≈ Medium, 60% ≈ Small — just informative, use whatever fits your sizes."
       />
 
       <s-query-container>
@@ -82,6 +112,7 @@ function SizeFormFields({
             step={0.01}
             prefix="$"
             autocomplete="off"
+            error={errors.price}
           />
 
           <s-number-field
@@ -95,6 +126,7 @@ function SizeFormFields({
             step={0.01}
             prefix="$"
             autocomplete="off"
+            error={errors.compareAtPrice}
           />
         </s-grid>
       </s-query-container>
@@ -111,15 +143,28 @@ function AddSizeModal({
 }) {
   const [values, setValues] = useState<SizeFormState>(blankSizeValues);
 
+  const [errors, setErrors] = useState<SizeFormErrors>({});
+
   const dirty = values.label.trim().length > 0;
 
-  const reset = () => setValues(blankSizeValues);
+  const reset = () => {
+    setValues(blankSizeValues);
+    setErrors({});
+  };
 
   return (
     <s-modal id="add-size" heading="Add size">
       <Form
         method="post"
-        onSubmit={() => {
+        onSubmit={(event) => {
+          const validationErrors = validateSizeForm(values);
+
+          if (Object.keys(validationErrors).length > 0) {
+            event.preventDefault();
+            setErrors(validationErrors);
+            return;
+          }
+
           reset();
           onAdded();
         }}
@@ -129,9 +174,21 @@ function AddSizeModal({
         <s-stack direction="block" gap="base">
           <SizeFormFields
             values={values}
-            onChange={(patch) =>
-              setValues((current) => ({ ...current, ...patch }))
-            }
+            errors={errors}
+            onChange={(patch) => {
+              setValues((current) => ({ ...current, ...patch }));
+              setErrors((current) => {
+                const next = { ...current };
+
+                for (const key of Object.keys(patch) as Array<
+                  keyof SizeFormState
+                >) {
+                  delete next[key];
+                }
+
+                return next;
+              });
+            }}
           />
 
           <s-stack direction="inline" gap="base">
@@ -171,6 +228,8 @@ function EditSizeModal({
 
   const [values, setValues] = useState<SizeFormState>(initialValues);
 
+  const [errors, setErrors] = useState<SizeFormErrors>({});
+
   const isDirty =
     values.label !== initialValues.label ||
     values.scalePercent !== initialValues.scalePercent ||
@@ -179,7 +238,20 @@ function EditSizeModal({
 
   return (
     <s-modal id={`edit-size-${option.id}`} heading={`Edit ${option.label}`}>
-      <Form method="post">
+      <Form
+        method="post"
+        onSubmit={(event) => {
+          const validationErrors = validateSizeForm(values);
+
+          if (Object.keys(validationErrors).length > 0) {
+            event.preventDefault();
+            setErrors(validationErrors);
+            return;
+          }
+
+          setErrors({});
+        }}
+      >
         <input type="hidden" name="intent" value="editSize" />
 
         <input type="hidden" name="sizeOptionId" value={option.id} />
@@ -187,9 +259,21 @@ function EditSizeModal({
         <s-stack direction="block" gap="base">
           <SizeFormFields
             values={values}
-            onChange={(patch) =>
-              setValues((current) => ({ ...current, ...patch }))
-            }
+            errors={errors}
+            onChange={(patch) => {
+              setValues((current) => ({ ...current, ...patch }));
+              setErrors((current) => {
+                const next = { ...current };
+
+                for (const key of Object.keys(patch) as Array<
+                  keyof SizeFormState
+                >) {
+                  delete next[key];
+                }
+
+                return next;
+              });
+            }}
           />
 
           <s-stack direction="inline" gap="base">
@@ -206,7 +290,10 @@ function EditSizeModal({
               variant="secondary"
               commandFor={`edit-size-${option.id}`}
               command="--hide"
-              onClick={() => setValues(initialValues)}
+              onClick={() => {
+                setValues(initialValues);
+                setErrors({});
+              }}
               disabled={submitting}
             >
               Cancel
