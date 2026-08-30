@@ -445,11 +445,17 @@ async function upsertShopifyProduct(
                 optionName: entry.axisName,
                 name: entry.value.label,
               })),
-              // Only Framing ever makes a variant a real physical
-              // product — everything else in this app is digital.
+              // Made to order from the customer's own upload — there's
+              // no real stock to run out of, on any size/framing
+              // combination, so every variant stays untracked and
+              // purchasable regardless. Only Framing ever makes a
+              // variant a real physical product — everything else in
+              // this app is digital.
               inventoryItem: {
+                tracked: false,
                 requiresShipping: framingValue?.requiresShipping ?? false,
               },
+              inventoryPolicy: "CONTINUE",
             };
           })
         : [
@@ -462,6 +468,11 @@ async function upsertShopifyProduct(
                 ? style.compareAtPrice.toString()
                 : null,
               optionValues: [{ optionName: "Title", name: "Default Title" }],
+              inventoryItem: {
+                tracked: false,
+                requiresShipping: false,
+              },
+              inventoryPolicy: "CONTINUE",
             },
           ],
 
