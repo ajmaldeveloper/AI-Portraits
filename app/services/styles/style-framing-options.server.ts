@@ -59,6 +59,16 @@ async function requireEditableStyle(shop: string, styleId: string) {
   return style;
 }
 
+// Every mutation here (add/edit/delete/reorder) must be reflected in
+// the Publish tab's "changes to push" detection — see the identical
+// comment in style-size-options.server.ts.
+async function touchStyle(styleId: string) {
+  await prisma.style.update({
+    where: { id: styleId },
+    data: { updatedAt: new Date() },
+  });
+}
+
 async function assertUniqueLabel(
   styleId: string,
   label: string,
@@ -91,7 +101,7 @@ export async function createStyleFramingOption(
     select: { position: true },
   });
 
-  return prisma.styleFramingOption.create({
+  const created = await prisma.styleFramingOption.create({
     data: {
       styleId,
       label: normalized.label,
@@ -101,6 +111,10 @@ export async function createStyleFramingOption(
       position: (lastOption?.position ?? -1) + 1,
     },
   });
+
+  await touchStyle(styleId);
+
+  return created;
 }
 
 export async function updateStyleFramingOption(
@@ -115,7 +129,7 @@ export async function updateStyleFramingOption(
 
   await assertUniqueLabel(styleId, normalized.label, framingOptionId);
 
-  return prisma.styleFramingOption.update({
+  const updated = await prisma.styleFramingOption.update({
     where: { id: framingOptionId, styleId },
     data: {
       label: normalized.label,
@@ -124,6 +138,10 @@ export async function updateStyleFramingOption(
       requiresShipping: normalized.requiresShipping,
     },
   });
+
+  await touchStyle(styleId);
+
+  return updated;
 }
 
 export async function deleteStyleFramingOption(
@@ -145,4 +163,47 @@ export async function deleteStyleFramingOption(
   await prisma.styleFramingOption.delete({
     where: { id: framingOptionId },
   });
+
+  await touchStyle(styleId);
+}
+
+/**
+ * Sets an arbitrary new display order — the drag-and-drop reorder
+ * counterpart to create/update/delete, mirroring reorderStyleFields.
+ */
+export async function reorderStyleFramingOptions(
+  shop: string,
+  styleId: string,
+  orderedFramingOptionIds: string[],
+) {
+  await requireEditableStyle(shop, styleId);
+
+  const options = await prisma.styleFramingOption.findMany({
+    where: { styleId },
+    select: { id: true },
+  });
+
+  const knownIds = new Set(options.map((option) => option.id));
+
+  if (
+    orderedFramingOptionIds.length !== options.length ||
+    !orderedFramingOptionIds.every((id) => knownIds.has(id))
+  ) {
+    throw new Error(
+      "The new framing order does not match this style's framing options.",
+    );
+  }
+
+  await prisma.$transaction([
+    ...orderedFramingOptionIds.map((id, index) =>
+      prisma.styleFramingOption.update({
+        where: { id },
+        data: { position: index },
+      }),
+    ),
+    prisma.style.update({
+      where: { id: styleId },
+      data: { updatedAt: new Date() },
+    }),
+  ]);
 }

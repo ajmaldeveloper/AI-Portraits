@@ -1,5 +1,8 @@
-import { useState } from "react";
-import { Form, useNavigation } from "react-router";
+import { useEffect, useState } from "react";
+import { move } from "@dnd-kit/helpers";
+import { DragDropProvider } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
+import { Form, useNavigation, useSubmit } from "react-router";
 
 import { eventValue } from "../../utils/event-value";
 
@@ -119,12 +122,26 @@ function FramingFormFields({
   );
 }
 
-function AddFramingModal({ submitting }: { submitting: boolean }) {
+function AddFramingModal({
+  submitting,
+  resetSignal,
+}: {
+  submitting: boolean;
+  resetSignal: number;
+}) {
   const [values, setValues] = useState<FramingFormState>(blankFramingValues);
 
   const [errors, setErrors] = useState<FramingFormErrors>({});
 
   const dirty = values.label.trim().length > 0;
+
+  // Resets in place, not via remounting — see the identical comment in
+  // size-options-editor.tsx's AddSizeModal.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setValues(blankFramingValues);
+    setErrors({});
+  }, [resetSignal]);
 
   return (
     <s-modal id="add-framing" heading="Add framing option">
@@ -281,63 +298,133 @@ function EditFramingModal({
   );
 }
 
-function FramingRow({
+// Draggable row using @dnd-kit — same library/pattern as this app's
+// Customer fields tab (see SortableFieldRow in customer-fields.tsx).
+function SortableFramingRow({
   option,
+  index,
   editable,
 }: {
   option: FramingOptionView;
+  index: number;
   editable: boolean;
 }) {
+  const { ref, handleRef, isDragging, isDropTarget } = useSortable({
+    id: option.id,
+    index,
+    group: "framing-options",
+    disabled: !editable,
+
+    transition: {
+      duration: 180,
+      easing: "cubic-bezier(0.25, 1, 0.5, 1)",
+      idle: true,
+    },
+  });
+
   return (
     <div
+      ref={ref}
       style={{
+        position: "relative",
         display: "flex",
         alignItems: "flex-start",
-        justifyContent: "space-between",
         gap: "10px",
         padding: "12px",
-        border: "1px solid #e1e3e5",
+        border: "1px solid",
+        borderColor: isDropTarget ? "#005bd3" : "#e1e3e5",
         borderRadius: "8px",
-        background: "#ffffff",
+        background: isDropTarget ? "#f4f8ff" : "#ffffff",
+        opacity: isDragging ? 0.6 : 1,
+        boxShadow: isDragging ? "0 10px 24px rgba(0, 0, 0, 0.14)" : undefined,
+        zIndex: isDragging ? 20 : undefined,
+        transition: "border-color 140ms ease, background 140ms ease",
       }}
     >
-      <s-stack direction="block" gap="small-200">
-        <s-text type="strong">{option.label}</s-text>
-
-        <s-stack direction="inline" gap="small">
-          <s-badge tone="neutral">
-            {Number(option.priceDelta) >= 0 ? "+" : ""}
-            ${option.priceDelta}
-          </s-badge>
-
-          {option.requiresShipping ? (
-            <s-badge tone="warning">Ships physically</s-badge>
-          ) : (
-            <s-badge tone="success">Digital</s-badge>
-          )}
-        </s-stack>
-      </s-stack>
-
       {editable ? (
-        <s-stack direction="inline" gap="small">
-          <s-button
-            variant="tertiary"
-            commandFor={`edit-framing-${option.id}`}
-            command="--show"
-          >
-            Edit
-          </s-button>
-
-          <s-button
-            icon="delete"
-            variant="tertiary"
-            tone="critical"
-            commandFor={`delete-framing-${option.id}`}
-            command="--show"
-            accessibilityLabel={`Delete ${option.label}`}
+        <button
+          ref={handleRef}
+          type="button"
+          aria-label={`Drag ${option.label} to reorder`}
+          title="Drag to reorder"
+          style={{
+            display: "grid",
+            placeItems: "center",
+            flex: "0 0 auto",
+            width: "22px",
+            height: "32px",
+            marginTop: "2px",
+            padding: 0,
+            border: 0,
+            borderRadius: "6px",
+            background: "transparent",
+            color: "#6d7175",
+            cursor: "grab",
+            touchAction: "none",
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              display: "block",
+              width: "14px",
+              height: "20px",
+              backgroundImage:
+                "radial-gradient(circle, currentColor 1.4px, transparent 1.6px)",
+              backgroundPosition: "1px 1px",
+              backgroundSize: "6px 6px",
+              opacity: 0.7,
+            }}
           />
-        </s-stack>
+        </button>
       ) : null}
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <s-stack
+          direction="inline"
+          gap="base"
+          alignItems="start"
+          justifyContent="space-between"
+        >
+          <s-stack direction="block" gap="small-200">
+            <s-text type="strong">{option.label}</s-text>
+
+            <s-stack direction="inline" gap="small">
+              <s-badge tone="neutral">
+                {Number(option.priceDelta) >= 0 ? "+" : ""}
+                ${option.priceDelta}
+              </s-badge>
+
+              {option.requiresShipping ? (
+                <s-badge tone="warning">Ships physically</s-badge>
+              ) : (
+                <s-badge tone="success">Digital</s-badge>
+              )}
+            </s-stack>
+          </s-stack>
+
+          {editable ? (
+            <s-stack direction="inline" gap="small">
+              <s-button
+                variant="tertiary"
+                commandFor={`edit-framing-${option.id}`}
+                command="--show"
+              >
+                Edit
+              </s-button>
+
+              <s-button
+                icon="delete"
+                variant="tertiary"
+                tone="critical"
+                commandFor={`delete-framing-${option.id}`}
+                command="--show"
+                accessibilityLabel={`Delete ${option.label}`}
+              />
+            </s-stack>
+          ) : null}
+        </s-stack>
+      </div>
     </div>
   );
 }
@@ -362,10 +449,33 @@ export function FramingOptionsEditor({
     ? navigation.formData?.get("framingOptionId")
     : null;
 
-  // Remounts AddFramingModal (via its key) so its form starts blank
-  // again each time it's freshly opened — see the identical comment in
-  // size-options-editor.tsx's SizeOptionsEditor.
+  // Triggers AddFramingModal's own reset effect (see its resetSignal
+  // prop) right before a fresh modal opens — see the identical comment
+  // in size-options-editor.tsx's SizeOptionsEditor.
   const [addModalResetKey, setAddModalResetKey] = useState(0);
+
+  const submit = useSubmit();
+
+  // Local, reorderable copy — same pattern as SizeOptionsEditor /
+  // CustomerFields' orderedFields.
+  const [orderedFramingOptions, setOrderedFramingOptions] =
+    useState(framingOptions);
+
+  useEffect(() => {
+    setOrderedFramingOptions(framingOptions);
+  }, [framingOptions]);
+
+  const submitReorder = (nextOptions: FramingOptionView[]) => {
+    const formData = new FormData();
+
+    formData.set("intent", "reorderFraming");
+
+    for (const option of nextOptions) {
+      formData.append("framingOptionId", option.id);
+    }
+
+    submit(formData, { method: "post" });
+  };
 
   return (
     <s-section heading="Framing">
@@ -375,15 +485,39 @@ export function FramingOptionsEditor({
             No framing options yet — sizes (if any) publish on their own.
           </s-text>
         ) : (
-          <s-stack direction="block" gap="small-200">
-            {framingOptions.map((option) => (
-              <FramingRow
-                key={option.id}
-                option={option}
-                editable={editable}
-              />
-            ))}
-          </s-stack>
+          <DragDropProvider
+            onDragEnd={(event) => {
+              if (event.canceled || !editable) {
+                return;
+              }
+
+              const reordered = move(orderedFramingOptions, event);
+
+              const orderChanged = reordered.some(
+                (option, index) =>
+                  option.id !== orderedFramingOptions[index]?.id,
+              );
+
+              if (!orderChanged) {
+                return;
+              }
+
+              setOrderedFramingOptions(reordered);
+
+              submitReorder(reordered);
+            }}
+          >
+            <s-stack direction="block" gap="small-200">
+              {orderedFramingOptions.map((option, index) => (
+                <SortableFramingRow
+                  key={option.id}
+                  option={option}
+                  index={index}
+                  editable={editable}
+                />
+              ))}
+            </s-stack>
+          </DragDropProvider>
         )}
 
         {editable ? (
@@ -403,8 +537,8 @@ export function FramingOptionsEditor({
 
       {editable ? (
         <AddFramingModal
-          key={addModalResetKey}
           submitting={submittingIntent === "addFraming"}
+          resetSignal={addModalResetKey}
         />
       ) : null}
 

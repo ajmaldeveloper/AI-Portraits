@@ -63,6 +63,18 @@ async function requireEditableStyle(shop: string, styleId: string) {
   return style;
 }
 
+// Every mutation here (add/edit/delete/reorder) must be reflected in
+// the Publish tab's "changes to push" detection — that only looks at
+// Style.updatedAt (and asset timestamps), so a size-only change
+// (StyleSizeOption is a separate row) would otherwise be invisible to
+// it, most notably a reorder or a delete with nothing else changed.
+async function touchStyle(styleId: string) {
+  await prisma.style.update({
+    where: { id: styleId },
+    data: { updatedAt: new Date() },
+  });
+}
+
 async function assertUniqueLabel(
   styleId: string,
   label: string,
@@ -117,7 +129,7 @@ export async function createStyleSizeOption(
     select: { position: true },
   });
 
-  return prisma.styleSizeOption.create({
+  const created = await prisma.styleSizeOption.create({
     data: {
       styleId,
       label: normalized.label,
@@ -127,6 +139,10 @@ export async function createStyleSizeOption(
       position: (lastOption?.position ?? -1) + 1,
     },
   });
+
+  await touchStyle(styleId);
+
+  return created;
 }
 
 export async function updateStyleSizeOption(
@@ -145,7 +161,7 @@ export async function updateStyleSizeOption(
     await assertKeepsA100PercentOption(styleId, sizeOptionId);
   }
 
-  return prisma.styleSizeOption.update({
+  const updated = await prisma.styleSizeOption.update({
     where: { id: sizeOptionId, styleId },
     data: {
       label: normalized.label,
@@ -154,6 +170,10 @@ export async function updateStyleSizeOption(
       compareAtPrice: normalized.compareAtPrice,
     },
   });
+
+  await touchStyle(styleId);
+
+  return updated;
 }
 
 export async function deleteStyleSizeOption(
@@ -179,4 +199,45 @@ export async function deleteStyleSizeOption(
   await prisma.styleSizeOption.delete({
     where: { id: sizeOptionId },
   });
+
+  await touchStyle(styleId);
+}
+
+/**
+ * Sets an arbitrary new display order — the drag-and-drop reorder
+ * counterpart to create/update/delete, mirroring reorderStyleFields.
+ */
+export async function reorderStyleSizeOptions(
+  shop: string,
+  styleId: string,
+  orderedSizeOptionIds: string[],
+) {
+  await requireEditableStyle(shop, styleId);
+
+  const options = await prisma.styleSizeOption.findMany({
+    where: { styleId },
+    select: { id: true },
+  });
+
+  const knownIds = new Set(options.map((option) => option.id));
+
+  if (
+    orderedSizeOptionIds.length !== options.length ||
+    !orderedSizeOptionIds.every((id) => knownIds.has(id))
+  ) {
+    throw new Error("The new size order does not match this style's sizes.");
+  }
+
+  await prisma.$transaction([
+    ...orderedSizeOptionIds.map((id, index) =>
+      prisma.styleSizeOption.update({
+        where: { id },
+        data: { position: index },
+      }),
+    ),
+    prisma.style.update({
+      where: { id: styleId },
+      data: { updatedAt: new Date() },
+    }),
+  ]);
 }

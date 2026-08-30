@@ -8,12 +8,14 @@ import { ProductConfiguration } from "../components/styles/product-configuration
 import {
   createStyleFramingOption,
   deleteStyleFramingOption,
+  reorderStyleFramingOptions,
   type StyleFramingOptionInput,
   updateStyleFramingOption,
 } from "../services/styles/style-framing-options.server";
 import {
   createStyleSizeOption,
   deleteStyleSizeOption,
+  reorderStyleSizeOptions,
   type StyleSizeOptionInput,
   updateStyleSizeOption,
 } from "../services/styles/style-size-options.server";
@@ -280,6 +282,23 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       return redirect(`/app/styles/${styleId}/product?notice=size-deleted`);
     }
 
+    if (intent === "reorderSizes") {
+      const orderedSizeOptionIds = formData
+        .getAll("sizeOptionId")
+        .filter(
+          (value): value is string =>
+            typeof value === "string" && value.length > 0,
+        );
+
+      if (orderedSizeOptionIds.length === 0) {
+        throw new Error("Size order is required.");
+      }
+
+      await reorderStyleSizeOptions(session.shop, styleId, orderedSizeOptionIds);
+
+      return redirect(`/app/styles/${styleId}/product?notice=sizes-reordered`);
+    }
+
     if (intent === "addFraming" || intent === "editFraming") {
       const input: StyleFramingOptionInput = {
         label: formValue(formData, "label"),
@@ -310,6 +329,29 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       await deleteStyleFramingOption(session.shop, styleId, framingOptionId);
 
       return redirect(`/app/styles/${styleId}/product?notice=framing-deleted`);
+    }
+
+    if (intent === "reorderFraming") {
+      const orderedFramingOptionIds = formData
+        .getAll("framingOptionId")
+        .filter(
+          (value): value is string =>
+            typeof value === "string" && value.length > 0,
+        );
+
+      if (orderedFramingOptionIds.length === 0) {
+        throw new Error("Framing order is required.");
+      }
+
+      await reorderStyleFramingOptions(
+        session.shop,
+        styleId,
+        orderedFramingOptionIds,
+      );
+
+      return redirect(
+        `/app/styles/${styleId}/product?notice=framing-reordered`,
+      );
     }
 
     const productTitle = formValue(formData, "productTitle");
@@ -368,8 +410,10 @@ const notices: Record<string, string> = {
   "product-saved": "Product details saved",
   "size-saved": "Size saved",
   "size-deleted": "Size deleted",
+  "sizes-reordered": "Sizes reordered",
   "framing-saved": "Framing option saved",
   "framing-deleted": "Framing option deleted",
+  "framing-reordered": "Framing options reordered",
 };
 
 export default function StyleProduct() {

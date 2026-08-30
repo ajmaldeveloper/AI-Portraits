@@ -48,7 +48,13 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   // Nothing to push to Shopify unless the Style itself (product fields,
   // tags, collections, etc.) or one of its assets (media selection) has
-  // changed since the last successful publish/update.
+  // changed since the last successful publish/update. Size/framing
+  // option changes (add/edit/delete/reorder — including a reorder
+  // alone, since Shopify's variant option values follow this same
+  // position order) touch Style.updatedAt directly (see touchStyle in
+  // style-size-options.server.ts / style-framing-options.server.ts),
+  // so they're already covered by the updatedAt check below without
+  // needing their own separate comparison here.
   const latestAssetChange = style.assets.reduce(
     (latest, asset) => Math.max(latest, asset.updatedAt.getTime()),
     0,

@@ -1,5 +1,8 @@
-import { useState } from "react";
-import { Form, useNavigation } from "react-router";
+import { useEffect, useState } from "react";
+import { move } from "@dnd-kit/helpers";
+import { DragDropProvider } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
+import { Form, useNavigation, useSubmit } from "react-router";
 
 import { eventValue } from "../../utils/event-value";
 
@@ -135,7 +138,13 @@ function SizeFormFields({
   );
 }
 
-function AddSizeModal({ submitting }: { submitting: boolean }) {
+function AddSizeModal({
+  submitting,
+  resetSignal,
+}: {
+  submitting: boolean;
+  resetSignal: number;
+}) {
   const [values, setValues] = useState<SizeFormState>(blankSizeValues);
 
   const [errors, setErrors] = useState<SizeFormErrors>({});
@@ -146,6 +155,14 @@ function AddSizeModal({ submitting }: { submitting: boolean }) {
     setValues(blankSizeValues);
     setErrors({});
   };
+
+  // Resets in place (not via remounting the modal) — a key-based
+  // remount raced with the trigger button's native --show command,
+  // which targets the modal element by id: the old element could be
+  // torn down and replaced by a new one in the same click before the
+  // show command reached it, leaving the popup never actually opening.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(reset, [resetSignal]);
 
   return (
     <s-modal id="add-size" heading="Add size">
@@ -302,60 +319,130 @@ function EditSizeModal({
   );
 }
 
-function SizeRow({
+// Draggable row using @dnd-kit — same library/pattern as this app's
+// Customer fields tab (see SortableFieldRow in customer-fields.tsx).
+function SortableSizeRow({
   option,
+  index,
   editable,
 }: {
   option: SizeOptionView;
+  index: number;
   editable: boolean;
 }) {
+  const { ref, handleRef, isDragging, isDropTarget } = useSortable({
+    id: option.id,
+    index,
+    group: "size-options",
+    disabled: !editable,
+
+    transition: {
+      duration: 180,
+      easing: "cubic-bezier(0.25, 1, 0.5, 1)",
+      idle: true,
+    },
+  });
+
   return (
     <div
+      ref={ref}
       style={{
+        position: "relative",
         display: "flex",
         alignItems: "flex-start",
-        justifyContent: "space-between",
         gap: "10px",
         padding: "12px",
-        border: "1px solid #e1e3e5",
+        border: "1px solid",
+        borderColor: isDropTarget ? "#005bd3" : "#e1e3e5",
         borderRadius: "8px",
-        background: "#ffffff",
+        background: isDropTarget ? "#f4f8ff" : "#ffffff",
+        opacity: isDragging ? 0.6 : 1,
+        boxShadow: isDragging ? "0 10px 24px rgba(0, 0, 0, 0.14)" : undefined,
+        zIndex: isDragging ? 20 : undefined,
+        transition: "border-color 140ms ease, background 140ms ease",
       }}
     >
-      <s-stack direction="block" gap="small-200">
-        <s-text type="strong">{option.label}</s-text>
+      {editable ? (
+        <button
+          ref={handleRef}
+          type="button"
+          aria-label={`Drag ${option.label} to reorder`}
+          title="Drag to reorder"
+          style={{
+            display: "grid",
+            placeItems: "center",
+            flex: "0 0 auto",
+            width: "22px",
+            height: "32px",
+            marginTop: "2px",
+            padding: 0,
+            border: 0,
+            borderRadius: "6px",
+            background: "transparent",
+            color: "#6d7175",
+            cursor: "grab",
+            touchAction: "none",
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              display: "block",
+              width: "14px",
+              height: "20px",
+              backgroundImage:
+                "radial-gradient(circle, currentColor 1.4px, transparent 1.6px)",
+              backgroundPosition: "1px 1px",
+              backgroundSize: "6px 6px",
+              opacity: 0.7,
+            }}
+          />
+        </button>
+      ) : null}
 
-        <s-stack direction="inline" gap="small">
-          <s-badge tone="info">{option.scalePercent}% scale</s-badge>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <s-stack
+          direction="inline"
+          gap="base"
+          alignItems="start"
+          justifyContent="space-between"
+        >
+          <s-stack direction="block" gap="small-200">
+            <s-text type="strong">{option.label}</s-text>
 
-          <s-badge tone="neutral">${option.price}</s-badge>
+            <s-stack direction="inline" gap="small">
+              <s-badge tone="info">{option.scalePercent}% scale</s-badge>
 
-          {option.compareAtPrice ? (
-            <s-badge tone="neutral">was ${option.compareAtPrice}</s-badge>
+              <s-badge tone="neutral">${option.price}</s-badge>
+
+              {option.compareAtPrice ? (
+                <s-badge tone="neutral">was ${option.compareAtPrice}</s-badge>
+              ) : null}
+            </s-stack>
+          </s-stack>
+
+          {editable ? (
+            <s-stack direction="inline" gap="small">
+              <s-button
+                variant="tertiary"
+                commandFor={`edit-size-${option.id}`}
+                command="--show"
+              >
+                Edit
+              </s-button>
+
+              <s-button
+                icon="delete"
+                variant="tertiary"
+                tone="critical"
+                commandFor={`delete-size-${option.id}`}
+                command="--show"
+                accessibilityLabel={`Delete ${option.label}`}
+              />
+            </s-stack>
           ) : null}
         </s-stack>
-      </s-stack>
-
-      {editable ? (
-        <s-stack direction="inline" gap="small">
-          <s-button
-            variant="tertiary"
-            commandFor={`edit-size-${option.id}`}
-            command="--show"
-          >
-            Edit
-          </s-button>
-
-          <s-button
-            icon="delete"
-            variant="tertiary"
-            tone="critical"
-            commandFor={`delete-size-${option.id}`}
-            command="--show"
-            accessibilityLabel={`Delete ${option.label}`}
-          />
-        </s-stack>
-      ) : null}
+      </div>
     </div>
   );
 }
@@ -380,12 +467,35 @@ export function SizeOptionsEditor({
     ? navigation.formData?.get("sizeOptionId")
     : null;
 
-  // Remounts AddSizeModal (via its key) so its form starts blank again
-  // each time it's freshly opened — its own values must NOT reset the
-  // instant Add is clicked (that happens while the request is still in
-  // flight, wiping out what the merchant just typed before it's even
-  // submitted).
+  // Triggers AddSizeModal's own reset effect (see its resetSignal prop)
+  // right before a fresh modal opens — its values must NOT reset the
+  // instant Add is clicked, since that happens while the request is
+  // still in flight, before the merchant even sees it submit.
   const [addModalResetKey, setAddModalResetKey] = useState(0);
+
+  const submit = useSubmit();
+
+  // Local, reorderable copy — updated instantly on drop so dragging
+  // feels immediate, then synced back once the loader data reflects
+  // the persisted order (or reverted if the save fails). Same pattern
+  // as CustomerFields' orderedFields.
+  const [orderedSizeOptions, setOrderedSizeOptions] = useState(sizeOptions);
+
+  useEffect(() => {
+    setOrderedSizeOptions(sizeOptions);
+  }, [sizeOptions]);
+
+  const submitReorder = (nextOptions: SizeOptionView[]) => {
+    const formData = new FormData();
+
+    formData.set("intent", "reorderSizes");
+
+    for (const option of nextOptions) {
+      formData.append("sizeOptionId", option.id);
+    }
+
+    submit(formData, { method: "post" });
+  };
 
   return (
     <s-section heading="Sizes">
@@ -395,11 +505,38 @@ export function SizeOptionsEditor({
             No sizes yet — this publishes as a single, one-size product.
           </s-text>
         ) : (
-          <s-stack direction="block" gap="small-200">
-            {sizeOptions.map((option) => (
-              <SizeRow key={option.id} option={option} editable={editable} />
-            ))}
-          </s-stack>
+          <DragDropProvider
+            onDragEnd={(event) => {
+              if (event.canceled || !editable) {
+                return;
+              }
+
+              const reordered = move(orderedSizeOptions, event);
+
+              const orderChanged = reordered.some(
+                (option, index) => option.id !== orderedSizeOptions[index]?.id,
+              );
+
+              if (!orderChanged) {
+                return;
+              }
+
+              setOrderedSizeOptions(reordered);
+
+              submitReorder(reordered);
+            }}
+          >
+            <s-stack direction="block" gap="small-200">
+              {orderedSizeOptions.map((option, index) => (
+                <SortableSizeRow
+                  key={option.id}
+                  option={option}
+                  index={index}
+                  editable={editable}
+                />
+              ))}
+            </s-stack>
+          </DragDropProvider>
         )}
 
         {editable ? (
@@ -419,8 +556,8 @@ export function SizeOptionsEditor({
 
       {editable ? (
         <AddSizeModal
-          key={addModalResetKey}
           submitting={submittingIntent === "addSize"}
+          resetSignal={addModalResetKey}
         />
       ) : null}
 
