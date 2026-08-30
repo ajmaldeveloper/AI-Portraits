@@ -6,12 +6,16 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { ProductConfiguration } from "../components/styles/product-configuration";
 import {
-  type SaveStyleFramingOptionInput,
-  saveStyleFramingOptions,
+  createStyleFramingOption,
+  deleteStyleFramingOption,
+  type StyleFramingOptionInput,
+  updateStyleFramingOption,
 } from "../services/styles/style-framing-options.server";
 import {
-  type SaveStyleSizeOptionInput,
-  saveStyleSizeOptions,
+  createStyleSizeOption,
+  deleteStyleSizeOption,
+  type StyleSizeOptionInput,
+  updateStyleSizeOption,
 } from "../services/styles/style-size-options.server";
 import {
   requireStyleForShop,
@@ -246,15 +250,76 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
   const formData = await request.formData();
 
-  const productTitle = formValue(formData, "productTitle");
-
-  const productDescription = formValue(formData, "productDescription");
-
-  const basePrice = formValue(formData, "basePrice");
-
-  const compareAtPrice = formValue(formData, "compareAtPrice");
+  const intent = formValue(formData, "intent") || "saveProduct";
 
   try {
+    if (intent === "addSize" || intent === "editSize") {
+      const input: StyleSizeOptionInput = {
+        label: formValue(formData, "label"),
+        scalePercent: Number(formValue(formData, "scalePercent")),
+        price: formValue(formData, "price"),
+        compareAtPrice: formValue(formData, "compareAtPrice") || null,
+      };
+
+      if (intent === "addSize") {
+        await createStyleSizeOption(session.shop, styleId, input);
+      } else {
+        const sizeOptionId = formValue(formData, "sizeOptionId");
+
+        await updateStyleSizeOption(session.shop, styleId, sizeOptionId, input);
+      }
+
+      return redirect(`/app/styles/${styleId}/product?notice=size-saved`);
+    }
+
+    if (intent === "deleteSize") {
+      const sizeOptionId = formValue(formData, "sizeOptionId");
+
+      await deleteStyleSizeOption(session.shop, styleId, sizeOptionId);
+
+      return redirect(`/app/styles/${styleId}/product?notice=size-deleted`);
+    }
+
+    if (intent === "addFraming" || intent === "editFraming") {
+      const input: StyleFramingOptionInput = {
+        label: formValue(formData, "label"),
+        priceDelta: formValue(formData, "priceDelta"),
+        compareAtPriceDelta: formValue(formData, "compareAtPriceDelta") || null,
+        requiresShipping: formData.has("requiresShipping"),
+      };
+
+      if (intent === "addFraming") {
+        await createStyleFramingOption(session.shop, styleId, input);
+      } else {
+        const framingOptionId = formValue(formData, "framingOptionId");
+
+        await updateStyleFramingOption(
+          session.shop,
+          styleId,
+          framingOptionId,
+          input,
+        );
+      }
+
+      return redirect(`/app/styles/${styleId}/product?notice=framing-saved`);
+    }
+
+    if (intent === "deleteFraming") {
+      const framingOptionId = formValue(formData, "framingOptionId");
+
+      await deleteStyleFramingOption(session.shop, styleId, framingOptionId);
+
+      return redirect(`/app/styles/${styleId}/product?notice=framing-deleted`);
+    }
+
+    const productTitle = formValue(formData, "productTitle");
+
+    const productDescription = formValue(formData, "productDescription");
+
+    const basePrice = formValue(formData, "basePrice");
+
+    const compareAtPrice = formValue(formData, "compareAtPrice");
+
     if (!productTitle) {
       return {
         error: "Product title is required.",
@@ -279,79 +344,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
     const collectionIds = parseCollectionIds(formData.get("collectionIds"));
 
-    const sizesRaw = formData.get("sizesJson");
-
-    let sizesParsed: unknown;
-
-    try {
-      sizesParsed = JSON.parse(String(sizesRaw ?? "[]"));
-    } catch {
-      return { error: "Could not read the submitted sizes." };
-    }
-
-    if (!Array.isArray(sizesParsed)) {
-      return { error: "Could not read the submitted sizes." };
-    }
-
-    const sizeInputs: SaveStyleSizeOptionInput[] = sizesParsed.map((entry) => {
-      const row = (entry ?? {}) as Record<string, unknown>;
-
-      // "new-*" ids are rows added client-side this session, not real
-      // saved rows yet — dropping the id here makes saveStyleSizeOptions
-      // create them fresh.
-      const id =
-        typeof row.id === "string" && !row.id.startsWith("new-")
-          ? row.id
-          : undefined;
-
-      const compareAtPriceRaw = String(row.compareAtPrice ?? "").trim();
-
-      return {
-        id,
-        label: String(row.label ?? ""),
-        scalePercent: Number(row.scalePercent),
-        price: String(row.price ?? ""),
-        compareAtPrice: compareAtPriceRaw || null,
-      };
-    });
-
-    const framingRaw = formData.get("framingJson");
-
-    let framingParsed: unknown;
-
-    try {
-      framingParsed = JSON.parse(String(framingRaw ?? "[]"));
-    } catch {
-      return { error: "Could not read the submitted framing options." };
-    }
-
-    if (!Array.isArray(framingParsed)) {
-      return { error: "Could not read the submitted framing options." };
-    }
-
-    const framingInputs: SaveStyleFramingOptionInput[] = framingParsed.map(
-      (entry) => {
-        const row = (entry ?? {}) as Record<string, unknown>;
-
-        const id =
-          typeof row.id === "string" && !row.id.startsWith("new-")
-            ? row.id
-            : undefined;
-
-        const compareAtPriceDeltaRaw = String(
-          row.compareAtPriceDelta ?? "",
-        ).trim();
-
-        return {
-          id,
-          label: String(row.label ?? ""),
-          priceDelta: String(row.priceDelta ?? ""),
-          compareAtPriceDelta: compareAtPriceDeltaRaw || null,
-          requiresShipping: row.requiresShipping === true,
-        };
-      },
-    );
-
     await updateStyleDraft(session.shop, styleId, {
       productTitle,
       productDescription,
@@ -360,10 +352,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       tags,
       collectionIds,
     });
-
-    await saveStyleSizeOptions(session.shop, styleId, sizeInputs);
-
-    await saveStyleFramingOptions(session.shop, styleId, framingInputs);
 
     return redirect(`/app/styles/${styleId}/product?notice=product-saved`);
   } catch (error) {
@@ -378,6 +366,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
 const notices: Record<string, string> = {
   "product-saved": "Product details saved",
+  "size-saved": "Size saved",
+  "size-deleted": "Size deleted",
+  "framing-saved": "Framing option saved",
+  "framing-deleted": "Framing option deleted",
 };
 
 export default function StyleProduct() {

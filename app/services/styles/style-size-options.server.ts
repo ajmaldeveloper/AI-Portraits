@@ -1,24 +1,57 @@
 import prisma from "../../db.server";
 import { requireStyleForShop, styleCanBeEdited } from "./style.server";
 
-// Per-style print/download size variants, configured on the Product
-// tab — see StyleSizeOption in schema.prisma. An empty list means the
-// product stays single-variant at publish time (style-publish.server.ts);
-// a merchant opts into sizing by adding rows here.
+// Per-style print/download size variants, edited one at a time via
+// modals on the Product tab — see StyleSizeOption in schema.prisma. An
+// empty list means the product stays single-variant at publish time
+// (style-publish.server.ts); a merchant opts in by adding rows here.
 
-export type SaveStyleSizeOptionInput = {
-  id?: string;
+export type StyleSizeOptionInput = {
   label: string;
   scalePercent: number;
   price: string;
   compareAtPrice: string | null;
 };
 
-export async function saveStyleSizeOptions(
-  shop: string,
-  styleId: string,
-  inputs: SaveStyleSizeOptionInput[],
-): Promise<void> {
+function requiredText(value: string, fieldName: string) {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    throw new Error(`${fieldName} is required.`);
+  }
+
+  return normalized;
+}
+
+const decimalPattern = /^\d+(?:\.\d{1,2})?$/;
+
+function validateInput(input: StyleSizeOptionInput) {
+  const label = requiredText(input.label, "Size name");
+
+  if (
+    !Number.isInteger(input.scalePercent) ||
+    input.scalePercent < 1 ||
+    input.scalePercent > 100
+  ) {
+    throw new Error("Scale must be between 1 and 100%.");
+  }
+
+  if (!decimalPattern.test(input.price)) {
+    throw new Error(
+      "Price must be a non-negative number with up to two decimal places.",
+    );
+  }
+
+  if (input.compareAtPrice && !decimalPattern.test(input.compareAtPrice)) {
+    throw new Error(
+      "Compare-at price must be a non-negative number with up to two decimal places.",
+    );
+  }
+
+  return { ...input, label };
+}
+
+async function requireEditableStyle(shop: string, styleId: string) {
   const style = await requireStyleForShop(shop, styleId);
 
   if (!styleCanBeEdited(style)) {
@@ -27,97 +60,123 @@ export async function saveStyleSizeOptions(
     );
   }
 
-  const labels = new Set<string>();
+  return style;
+}
 
-  for (const input of inputs) {
-    const label = input.label.trim();
+async function assertUniqueLabel(
+  styleId: string,
+  label: string,
+  excludeId?: string,
+) {
+  const existing = await prisma.styleSizeOption.findUnique({
+    where: { styleId_label: { styleId, label } },
+    select: { id: true },
+  });
 
-    if (!label) {
-      throw new Error("Every size needs a name.");
-    }
-
-    if (labels.has(label.toLowerCase())) {
-      throw new Error("Size names must be unique.");
-    }
-
-    labels.add(label.toLowerCase());
-
-    if (
-      !Number.isInteger(input.scalePercent) ||
-      input.scalePercent < 1 ||
-      input.scalePercent > 100
-    ) {
-      throw new Error("Size scale must be between 1 and 100%.");
-    }
-
-    if (!/^\d+(?:\.\d{1,2})?$/.test(input.price)) {
-      throw new Error(
-        "Size price must be a non-negative number with up to two decimal places.",
-      );
-    }
-
-    if (
-      input.compareAtPrice &&
-      !/^\d+(?:\.\d{1,2})?$/.test(input.compareAtPrice)
-    ) {
-      throw new Error(
-        "Size compare-at price must be a non-negative number with up to two decimal places.",
-      );
-    }
+  if (existing && existing.id !== excludeId) {
+    throw new Error("A size with this name already exists.");
   }
+}
 
-  if (
-    inputs.length > 0 &&
-    !inputs.some((input) => input.scalePercent === 100)
-  ) {
-    throw new Error("Keep at least one size at 100% (the original resolution).");
-  }
+/**
+ * At least one size must stay at 100% (the original resolution)
+ * whenever any sizes exist at all — otherwise every size on the
+ * product would be an upscale-free downscale with nothing to downscale
+ * FROM at full quality.
+ */
+async function assertKeepsA100PercentOption(
+  styleId: string,
+  excludeId?: string,
+) {
+  const remaining = await prisma.styleSizeOption.findMany({
+    where: { styleId, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    select: { scalePercent: true },
+  });
 
-  // Existing rows are updated in place by id, not deleted and
-  // recreated — Style.productSettings.sizeVariants matches Shopify
-  // variants against this same id on republish (see
-  // style-publish.server.ts), so a fresh id here would orphan and
-  // duplicate this product's already-published size variants.
-  await prisma.$transaction(async (tx) => {
-    const existing = await tx.styleSizeOption.findMany({
-      where: { styleId },
-      select: { id: true },
-    });
-
-    const keptIds = new Set(
-      inputs
-        .map((input) => input.id)
-        .filter((id): id is string => typeof id === "string"),
+  if (remaining.length > 0 && !remaining.some((row) => row.scalePercent === 100)) {
+    throw new Error(
+      "Keep at least one size at 100% (the original resolution).",
     );
+  }
+}
 
-    const removedIds = existing
-      .map((row) => row.id)
-      .filter((id) => !keptIds.has(id));
+export async function createStyleSizeOption(
+  shop: string,
+  styleId: string,
+  input: StyleSizeOptionInput,
+) {
+  await requireEditableStyle(shop, styleId);
 
-    if (removedIds.length > 0) {
-      await tx.styleSizeOption.deleteMany({
-        where: { id: { in: removedIds } },
-      });
-    }
+  const normalized = validateInput(input);
 
-    for (const [index, input] of inputs.entries()) {
-      const data = {
-        styleId,
-        label: input.label.trim(),
-        scalePercent: input.scalePercent,
-        price: input.price,
-        compareAtPrice: input.compareAtPrice,
-        position: index,
-      };
+  await assertUniqueLabel(styleId, normalized.label);
 
-      if (input.id) {
-        await tx.styleSizeOption.update({
-          where: { id: input.id },
-          data,
-        });
-      } else {
-        await tx.styleSizeOption.create({ data });
-      }
-    }
+  const lastOption = await prisma.styleSizeOption.findFirst({
+    where: { styleId },
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
+
+  return prisma.styleSizeOption.create({
+    data: {
+      styleId,
+      label: normalized.label,
+      scalePercent: normalized.scalePercent,
+      price: normalized.price,
+      compareAtPrice: normalized.compareAtPrice,
+      position: (lastOption?.position ?? -1) + 1,
+    },
+  });
+}
+
+export async function updateStyleSizeOption(
+  shop: string,
+  styleId: string,
+  sizeOptionId: string,
+  input: StyleSizeOptionInput,
+) {
+  await requireEditableStyle(shop, styleId);
+
+  const normalized = validateInput(input);
+
+  await assertUniqueLabel(styleId, normalized.label, sizeOptionId);
+
+  if (normalized.scalePercent !== 100) {
+    await assertKeepsA100PercentOption(styleId, sizeOptionId);
+  }
+
+  return prisma.styleSizeOption.update({
+    where: { id: sizeOptionId, styleId },
+    data: {
+      label: normalized.label,
+      scalePercent: normalized.scalePercent,
+      price: normalized.price,
+      compareAtPrice: normalized.compareAtPrice,
+    },
+  });
+}
+
+export async function deleteStyleSizeOption(
+  shop: string,
+  styleId: string,
+  sizeOptionId: string,
+) {
+  await requireEditableStyle(shop, styleId);
+
+  const target = await prisma.styleSizeOption.findFirst({
+    where: { id: sizeOptionId, styleId },
+    select: { id: true, scalePercent: true },
+  });
+
+  if (!target) {
+    throw new Error("Size was not found.");
+  }
+
+  if (target.scalePercent === 100) {
+    await assertKeepsA100PercentOption(styleId, sizeOptionId);
+  }
+
+  await prisma.styleSizeOption.delete({
+    where: { id: sizeOptionId },
   });
 }

@@ -1,25 +1,53 @@
 import prisma from "../../db.server";
 import { requireStyleForShop, styleCanBeEdited } from "./style.server";
 
-// Per-style Framing variants, configured on the Product tab — see
-// StyleFramingOption in schema.prisma. Priced as a delta on top of
-// whichever Size the customer picks (or the Style's flat basePrice if
-// no sizes exist), not an absolute price. An empty list is valid — no
-// framing offered, matching how an empty Size list means "single-size."
+// Per-style Framing variants, edited one at a time via modals on the
+// Product tab — see StyleFramingOption in schema.prisma. Priced as a
+// delta on top of whichever Size is chosen (or the Style's flat
+// basePrice if no sizes exist), not an absolute price. An empty list
+// is valid — no framing offered.
 
-export type SaveStyleFramingOptionInput = {
-  id?: string;
+export type StyleFramingOptionInput = {
   label: string;
   priceDelta: string;
   compareAtPriceDelta: string | null;
   requiresShipping: boolean;
 };
 
-export async function saveStyleFramingOptions(
-  shop: string,
-  styleId: string,
-  inputs: SaveStyleFramingOptionInput[],
-): Promise<void> {
+function requiredText(value: string, fieldName: string) {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    throw new Error(`${fieldName} is required.`);
+  }
+
+  return normalized;
+}
+
+const decimalPattern = /^-?\d+(?:\.\d{1,2})?$/;
+
+function validateInput(input: StyleFramingOptionInput) {
+  const label = requiredText(input.label, "Framing name");
+
+  if (!decimalPattern.test(input.priceDelta)) {
+    throw new Error(
+      "Price adjustment must be a valid number with up to two decimal places.",
+    );
+  }
+
+  if (
+    input.compareAtPriceDelta &&
+    !decimalPattern.test(input.compareAtPriceDelta)
+  ) {
+    throw new Error(
+      "Compare-at adjustment must be a valid number with up to two decimal places.",
+    );
+  }
+
+  return { ...input, label };
+}
+
+async function requireEditableStyle(shop: string, styleId: string) {
   const style = await requireStyleForShop(shop, styleId);
 
   if (!styleCanBeEdited(style)) {
@@ -28,84 +56,93 @@ export async function saveStyleFramingOptions(
     );
   }
 
-  const labels = new Set<string>();
+  return style;
+}
 
-  const decimalPattern = /^-?\d+(?:\.\d{1,2})?$/;
+async function assertUniqueLabel(
+  styleId: string,
+  label: string,
+  excludeId?: string,
+) {
+  const existing = await prisma.styleFramingOption.findUnique({
+    where: { styleId_label: { styleId, label } },
+    select: { id: true },
+  });
 
-  for (const input of inputs) {
-    const label = input.label.trim();
+  if (existing && existing.id !== excludeId) {
+    throw new Error("A framing option with this name already exists.");
+  }
+}
 
-    if (!label) {
-      throw new Error("Every framing option needs a name.");
-    }
+export async function createStyleFramingOption(
+  shop: string,
+  styleId: string,
+  input: StyleFramingOptionInput,
+) {
+  await requireEditableStyle(shop, styleId);
 
-    if (labels.has(label.toLowerCase())) {
-      throw new Error("Framing option names must be unique.");
-    }
+  const normalized = validateInput(input);
 
-    labels.add(label.toLowerCase());
+  await assertUniqueLabel(styleId, normalized.label);
 
-    if (!decimalPattern.test(input.priceDelta)) {
-      throw new Error(
-        "Framing price adjustment must be a valid number with up to two decimal places.",
-      );
-    }
+  const lastOption = await prisma.styleFramingOption.findFirst({
+    where: { styleId },
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
 
-    if (
-      input.compareAtPriceDelta &&
-      !decimalPattern.test(input.compareAtPriceDelta)
-    ) {
-      throw new Error(
-        "Framing compare-at adjustment must be a valid number with up to two decimal places.",
-      );
-    }
+  return prisma.styleFramingOption.create({
+    data: {
+      styleId,
+      label: normalized.label,
+      priceDelta: normalized.priceDelta,
+      compareAtPriceDelta: normalized.compareAtPriceDelta,
+      requiresShipping: normalized.requiresShipping,
+      position: (lastOption?.position ?? -1) + 1,
+    },
+  });
+}
+
+export async function updateStyleFramingOption(
+  shop: string,
+  styleId: string,
+  framingOptionId: string,
+  input: StyleFramingOptionInput,
+) {
+  await requireEditableStyle(shop, styleId);
+
+  const normalized = validateInput(input);
+
+  await assertUniqueLabel(styleId, normalized.label, framingOptionId);
+
+  return prisma.styleFramingOption.update({
+    where: { id: framingOptionId, styleId },
+    data: {
+      label: normalized.label,
+      priceDelta: normalized.priceDelta,
+      compareAtPriceDelta: normalized.compareAtPriceDelta,
+      requiresShipping: normalized.requiresShipping,
+    },
+  });
+}
+
+export async function deleteStyleFramingOption(
+  shop: string,
+  styleId: string,
+  framingOptionId: string,
+) {
+  await requireEditableStyle(shop, styleId);
+
+  const target = await prisma.styleFramingOption.findFirst({
+    where: { id: framingOptionId, styleId },
+    select: { id: true },
+  });
+
+  if (!target) {
+    throw new Error("Framing option was not found.");
   }
 
-  // Existing rows are updated in place by id, not deleted and
-  // recreated — Style.productSettings.sizeVariants matches Shopify
-  // variants against this same id (as part of a composite key with
-  // any Size option) on republish, so a fresh id here would orphan and
-  // duplicate this product's already-published variants.
-  await prisma.$transaction(async (tx) => {
-    const existing = await tx.styleFramingOption.findMany({
-      where: { styleId },
-      select: { id: true },
-    });
-
-    const keptIds = new Set(
-      inputs
-        .map((input) => input.id)
-        .filter((id): id is string => typeof id === "string"),
-    );
-
-    const removedIds = existing
-      .map((row) => row.id)
-      .filter((id) => !keptIds.has(id));
-
-    if (removedIds.length > 0) {
-      await tx.styleFramingOption.deleteMany({
-        where: { id: { in: removedIds } },
-      });
-    }
-
-    for (const [index, input] of inputs.entries()) {
-      const data = {
-        styleId,
-        label: input.label.trim(),
-        priceDelta: input.priceDelta,
-        compareAtPriceDelta: input.compareAtPriceDelta,
-        requiresShipping: input.requiresShipping,
-        position: index,
-      };
-
-      if (input.id) {
-        await tx.styleFramingOption.update({
-          where: { id: input.id },
-          data,
-        });
-      } else {
-        await tx.styleFramingOption.create({ data });
-      }
-    }
+  await prisma.styleFramingOption.delete({
+    where: { id: framingOptionId },
   });
 }
