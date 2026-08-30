@@ -331,23 +331,15 @@ export function ProductConfiguration({
       </s-section>
 
       {editable ? (
-        <s-stack direction="block" gap="small-200">
-          <s-stack direction="inline" gap="base">
-            <s-button
-              variant="primary"
-              loading={saving}
-              disabled={!isDirty || saving}
-              onClick={handleSave}
-            >
-              Save
-            </s-button>
-          </s-stack>
-
-          <s-text color="subdued">
-            Saves the title, description, tags, and collections above.
-            Sizes and framing save immediately as you add, edit, or remove
-            them — no separate save needed for those.
-          </s-text>
+        <s-stack direction="inline" gap="base">
+          <s-button
+            variant="primary"
+            loading={saving}
+            disabled={!isDirty || saving}
+            onClick={handleSave}
+          >
+            Save
+          </s-button>
         </s-stack>
       ) : null}
 
