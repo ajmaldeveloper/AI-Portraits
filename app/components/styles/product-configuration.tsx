@@ -71,6 +71,12 @@ export function ProductConfiguration({
     (collection) => collection.id,
   );
 
+  // Mirrors Shopify's own product form: the flat price only means
+  // anything for the single default variant. Once any size or framing
+  // option exists, the product is multi-variant and each variant's own
+  // price (set on those options) is what actually applies.
+  const hasVariants = sizeOptions.length > 0 || framingOptions.length > 0;
+
   const isDirty =
     productTitle !== initialProductTitle ||
     productDescription !== initialProductDescription ||
@@ -169,39 +175,52 @@ export function ProductConfiguration({
             autocomplete="off"
           />
 
-          <s-query-container>
-            <s-grid
-              gridTemplateColumns="@container (inline-size > 480px) 1fr 1fr, 1fr"
-              gap="base"
-            >
-              <s-number-field
-                label="Price"
-                value={basePrice}
-                onInput={(event: Event) => setBasePrice(eventValue(event))}
-                min={0}
-                step={0.01}
-                prefix="$"
-                disabled={!editable}
-                autocomplete="off"
-              />
+          {hasVariants ? (
+            <s-text color="subdued">
+              Priced per size/framing option below.
+            </s-text>
+          ) : (
+            <s-query-container>
+              <s-grid
+                gridTemplateColumns="@container (inline-size > 480px) 1fr 1fr, 1fr"
+                gap="base"
+              >
+                <s-number-field
+                  label="Price"
+                  value={basePrice}
+                  onInput={(event: Event) => setBasePrice(eventValue(event))}
+                  min={0}
+                  step={0.01}
+                  prefix="$"
+                  disabled={!editable}
+                  autocomplete="off"
+                />
 
-              <s-number-field
-                label="Compare-at price"
-                value={compareAtPrice}
-                onInput={(event: Event) =>
-                  setCompareAtPrice(eventValue(event))
-                }
-                min={0}
-                step={0.01}
-                prefix="$"
-                disabled={!editable}
-                autocomplete="off"
-                details="Optional. Shown crossed out next to the price."
-              />
-            </s-grid>
-          </s-query-container>
+                <s-number-field
+                  label="Compare-at price"
+                  value={compareAtPrice}
+                  onInput={(event: Event) =>
+                    setCompareAtPrice(eventValue(event))
+                  }
+                  min={0}
+                  step={0.01}
+                  prefix="$"
+                  disabled={!editable}
+                  autocomplete="off"
+                  details="Optional. Shown crossed out next to the price."
+                />
+              </s-grid>
+            </s-query-container>
+          )}
         </s-stack>
       </s-section>
+
+      <SizeOptionsEditor sizeOptions={sizeOptions} editable={editable} />
+
+      <FramingOptionsEditor
+        framingOptions={framingOptions}
+        editable={editable}
+      />
 
       <s-section heading="Product tags">
         <s-stack direction="block" gap="base">
@@ -310,13 +329,6 @@ export function ProductConfiguration({
           ) : null}
         </s-stack>
       </s-section>
-
-      <SizeOptionsEditor sizeOptions={sizeOptions} editable={editable} />
-
-      <FramingOptionsEditor
-        framingOptions={framingOptions}
-        editable={editable}
-      />
 
       {editable ? (
         <s-stack direction="inline" gap="base">
