@@ -126,6 +126,7 @@ function SizeFormFields({
             step={0.01}
             prefix="$"
             autocomplete="off"
+            details="Optional. Shown crossed out next to the price."
             error={errors.compareAtPrice}
           />
         </s-grid>

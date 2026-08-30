@@ -396,6 +396,15 @@ export default function StyleProduct() {
 
     shopify.toast.show(message);
 
+    // A successful add/edit/delete leaves its triggering modal open,
+    // showing stale content behind the toast — s-modal exposes
+    // hideOverlay() directly on the element.
+    document
+      .querySelectorAll<HTMLElement & { hideOverlay?: () => void }>(
+        "s-modal",
+      )
+      .forEach((modal) => modal.hideOverlay?.());
+
     // A plain URL cleanup, not a real navigation — history.replaceState
     // avoids a spurious loader revalidation that would otherwise flash
     // the Save button into a loading state right after landing here.
