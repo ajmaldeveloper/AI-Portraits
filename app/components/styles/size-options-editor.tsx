@@ -135,13 +135,7 @@ function SizeFormFields({
   );
 }
 
-function AddSizeModal({
-  submitting,
-  onAdded,
-}: {
-  submitting: boolean;
-  onAdded: () => void;
-}) {
+function AddSizeModal({ submitting }: { submitting: boolean }) {
   const [values, setValues] = useState<SizeFormState>(blankSizeValues);
 
   const [errors, setErrors] = useState<SizeFormErrors>({});
@@ -163,11 +157,13 @@ function AddSizeModal({
           if (Object.keys(validationErrors).length > 0) {
             event.preventDefault();
             setErrors(validationErrors);
-            return;
           }
 
-          reset();
-          onAdded();
+          // Do NOT reset values here — this fires synchronously the
+          // instant Add is clicked, while the request is still in
+          // flight, which blanked the form out from under the
+          // merchant before it even finished submitting. The trigger
+          // button resets it instead, right before a fresh modal opens.
         }}
       >
         <input type="hidden" name="intent" value="addSize" />
@@ -384,6 +380,13 @@ export function SizeOptionsEditor({
     ? navigation.formData?.get("sizeOptionId")
     : null;
 
+  // Remounts AddSizeModal (via its key) so its form starts blank again
+  // each time it's freshly opened — its own values must NOT reset the
+  // instant Add is clicked (that happens while the request is still in
+  // flight, wiping out what the merchant just typed before it's even
+  // submitted).
+  const [addModalResetKey, setAddModalResetKey] = useState(0);
+
   return (
     <s-section heading="Sizes">
       <s-stack direction="block" gap="base">
@@ -406,6 +409,7 @@ export function SizeOptionsEditor({
               variant="secondary"
               commandFor="add-size"
               command="--show"
+              onClick={() => setAddModalResetKey((key) => key + 1)}
             >
               Add size
             </s-button>
@@ -415,8 +419,8 @@ export function SizeOptionsEditor({
 
       {editable ? (
         <AddSizeModal
+          key={addModalResetKey}
           submitting={submittingIntent === "addSize"}
-          onAdded={() => {}}
         />
       ) : null}
 

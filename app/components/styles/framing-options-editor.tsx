@@ -119,23 +119,12 @@ function FramingFormFields({
   );
 }
 
-function AddFramingModal({
-  submitting,
-  onAdded,
-}: {
-  submitting: boolean;
-  onAdded: () => void;
-}) {
+function AddFramingModal({ submitting }: { submitting: boolean }) {
   const [values, setValues] = useState<FramingFormState>(blankFramingValues);
 
   const [errors, setErrors] = useState<FramingFormErrors>({});
 
   const dirty = values.label.trim().length > 0;
-
-  const reset = () => {
-    setValues(blankFramingValues);
-    setErrors({});
-  };
 
   return (
     <s-modal id="add-framing" heading="Add framing option">
@@ -147,11 +136,11 @@ function AddFramingModal({
           if (Object.keys(validationErrors).length > 0) {
             event.preventDefault();
             setErrors(validationErrors);
-            return;
           }
 
-          reset();
-          onAdded();
+          // Do NOT reset values here — see AddSizeModal's identical
+          // comment. The trigger button resets it instead, right
+          // before a fresh modal opens.
         }}
       >
         <input type="hidden" name="intent" value="addFraming" />
@@ -190,7 +179,6 @@ function AddFramingModal({
               variant="secondary"
               commandFor="add-framing"
               command="--hide"
-              onClick={reset}
               disabled={submitting}
             >
               Cancel
@@ -374,6 +362,11 @@ export function FramingOptionsEditor({
     ? navigation.formData?.get("framingOptionId")
     : null;
 
+  // Remounts AddFramingModal (via its key) so its form starts blank
+  // again each time it's freshly opened — see the identical comment in
+  // size-options-editor.tsx's SizeOptionsEditor.
+  const [addModalResetKey, setAddModalResetKey] = useState(0);
+
   return (
     <s-section heading="Framing">
       <s-stack direction="block" gap="base">
@@ -400,6 +393,7 @@ export function FramingOptionsEditor({
               variant="secondary"
               commandFor="add-framing"
               command="--show"
+              onClick={() => setAddModalResetKey((key) => key + 1)}
             >
               Add framing option
             </s-button>
@@ -409,8 +403,8 @@ export function FramingOptionsEditor({
 
       {editable ? (
         <AddFramingModal
+          key={addModalResetKey}
           submitting={submittingIntent === "addFraming"}
-          onAdded={() => {}}
         />
       ) : null}
 
