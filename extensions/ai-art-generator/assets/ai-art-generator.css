@@ -273,6 +273,10 @@ textarea.aig-control {
 .aig-result img {
   max-width: 100%;
   border-radius: var(--aig-radius);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
 }
 
 .aig-spinner {

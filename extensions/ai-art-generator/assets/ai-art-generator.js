@@ -480,10 +480,24 @@ class AiArtGenerator extends HTMLElement {
   renderResult(resultUrl) {
     this.innerHTML = `
       <div class="aig-result">
-        <img src="${resultUrl}" alt="Your personalized artwork" />
+        <img src="${resultUrl}" alt="Your personalized artwork" draggable="false" />
         <p class="aig-status-text">Ready — add to cart below to order this.</p>
       </div>
     `;
+
+    // Not real protection (anyone can still get the file via devtools
+    // or by inspecting network requests), just raises the bar against
+    // a casual right-click/drag save before the customer has actually
+    // paid for it.
+    const resultImage = this.querySelector(".aig-result img");
+
+    resultImage?.addEventListener("contextmenu", (event) =>
+      event.preventDefault(),
+    );
+
+    resultImage?.addEventListener("dragstart", (event) =>
+      event.preventDefault(),
+    );
   }
 }
 
