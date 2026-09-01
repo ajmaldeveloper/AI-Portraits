@@ -148,13 +148,15 @@ function AddFramingModal({
 
   const dirty = values.label.trim().length > 0;
 
+  const reset = () => {
+    setValues(blankFramingValues);
+    setErrors({});
+  };
+
   // Resets in place, not via remounting — see the identical comment in
   // size-options-editor.tsx's AddSizeModal.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    setValues(blankFramingValues);
-    setErrors({});
-  }, [resetSignal]);
+  useEffect(reset, [resetSignal]);
 
   return (
     <s-modal id="add-framing" heading="Add framing option">
@@ -212,6 +214,7 @@ function AddFramingModal({
               variant="secondary"
               commandFor="add-framing"
               command="--hide"
+              onClick={reset}
               disabled={submitting}
             >
               Cancel

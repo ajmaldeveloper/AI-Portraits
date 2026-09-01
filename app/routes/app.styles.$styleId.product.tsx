@@ -566,16 +566,27 @@ export default function StyleProduct() {
       return;
     }
 
-    shopify.toast.show(message);
-
     // A successful add/edit/delete leaves its triggering modal open,
     // showing stale content behind the toast — s-modal exposes
-    // hideOverlay() directly on the element.
-    document
-      .querySelectorAll<HTMLElement & { hideOverlay?: () => void }>(
-        "s-modal",
-      )
-      .forEach((modal) => modal.hideOverlay?.());
+    // hideOverlay() directly on the element. Closed before the toast
+    // fires (not after) and retried once on the next frame — on a
+    // freshly-added row, the new row's own Edit/Delete <s-modal>
+    // elements mount into the DOM in this same commit, and Shopify's
+    // modal web component can still be finishing its own internal
+    // dialog-ref setup (see the [ensureDialogRef] timing workaround in
+    // its own source) when this effect's synchronous call lands.
+    const closeOpenModals = () => {
+      document
+        .querySelectorAll<HTMLElement & { hideOverlay?: () => void }>(
+          "s-modal",
+        )
+        .forEach((modal) => modal.hideOverlay?.());
+    };
+
+    closeOpenModals();
+    requestAnimationFrame(closeOpenModals);
+
+    shopify.toast.show(message);
 
     // A plain URL cleanup, not a real navigation — history.replaceState
     // avoids a spurious loader revalidation that would otherwise flash

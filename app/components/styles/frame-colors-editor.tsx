@@ -80,37 +80,13 @@ function FrameColorFormFields({
         error={errors.label}
       />
 
-      <s-stack direction="inline" gap="small-200" alignItems="end">
-        <s-text-field
-          label="Hex color"
-          name="hexColor"
-          value={values.hexColor}
-          onInput={(event: Event) => onChange({ hexColor: eventValue(event) })}
-          placeholder="e.g. #1a1a1a"
-          required
-          autocomplete="off"
-          error={errors.hexColor}
-        />
-
-        <input
-          type="color"
-          aria-label="Pick a color"
-          value={
-            hexColorPattern.test(values.hexColor) ? values.hexColor : "#1a1a1a"
-          }
-          onChange={(event) => onChange({ hexColor: event.currentTarget.value })}
-          style={{
-            width: 32,
-            height: 32,
-            padding: 0,
-            border: "1px solid #d1d1d1",
-            borderRadius: 6,
-            cursor: "pointer",
-            flex: "0 0 auto",
-            marginBottom: 4,
-          }}
-        />
-      </s-stack>
+      <s-color-field
+        label="Color"
+        name="hexColor"
+        value={values.hexColor}
+        onInput={(event: Event) => onChange({ hexColor: eventValue(event) })}
+        error={errors.hexColor}
+      />
     </s-stack>
   );
 }
