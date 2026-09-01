@@ -132,6 +132,12 @@ export function StyleOverviewForm({
   // reach its own form-participation value the way real keystrokes do.
   const [prompt, setPrompt] = useState(values.prompt);
 
+  // Controlled too (was defaultValue/uncontrolled) — needed to detect
+  // isDirty below; nothing else depends on tracking it live.
+  const [name, setName] = useState(values.name);
+
+  const isDirty = name !== values.name || prompt !== values.prompt;
+
   return (
     <Form method="post">
       <s-stack direction="block" gap="base">
@@ -146,7 +152,16 @@ export function StyleOverviewForm({
             <s-text-field
               label="Internal name"
               name="name"
-              defaultValue={values.name}
+              value={name}
+              onInput={(event: Event) => {
+                const target = event.currentTarget as {
+                  value?: string;
+                } | null;
+
+                if (typeof target?.value === "string") {
+                  setName(target.value);
+                }
+              }}
               required
               disabled={!editable}
               autocomplete="off"
@@ -215,7 +230,7 @@ export function StyleOverviewForm({
         </s-section>
 
         <s-stack direction="inline" gap="base">
-          {editable ? (
+          {editable && isDirty ? (
             <s-button
               type="submit"
               variant="primary"
