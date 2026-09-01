@@ -567,20 +567,45 @@ export default function StyleProduct() {
     }
 
     // A successful add/edit/delete leaves its triggering modal open,
-    // showing stale content behind the toast — s-modal exposes
-    // hideOverlay() directly on the element. Closed before the toast
-    // fires (not after) and retried once on the next frame — on a
-    // freshly-added row, the new row's own Edit/Delete <s-modal>
-    // elements mount into the DOM in this same commit, and Shopify's
-    // modal web component can still be finishing its own internal
-    // dialog-ref setup (see the [ensureDialogRef] timing workaround in
-    // its own source) when this effect's synchronous call lands.
+    // showing stale content behind the toast. s-modal exposes
+    // hideOverlay() directly on the element, but on this tab (many
+    // s-modal instances at once — every Size/Framing/Frame color/Frame
+    // style row has its own Edit and Delete modal) it isn't reliably
+    // closing them. Simulating a click on each modal's own Cancel
+    // button reuses the exact interaction that's known to work (a
+    // human clicking Cancel), via a temporary invoker button rather
+    // than assuming a Cancel button exists inside every modal.
     const closeOpenModals = () => {
-      document
-        .querySelectorAll<HTMLElement & { hideOverlay?: () => void }>(
-          "s-modal",
-        )
-        .forEach((modal) => modal.hideOverlay?.());
+      document.querySelectorAll<HTMLElement>("s-modal").forEach((modal) => {
+        (modal as HTMLElement & { hideOverlay?: () => void }).hideOverlay?.();
+
+        const id = modal.id;
+
+        if (!id) {
+          return;
+        }
+
+        const invoker = document.createElement("s-button") as HTMLElement & {
+          commandFor?: string;
+          command?: string;
+        };
+
+        invoker.style.display = "none";
+
+        document.body.appendChild(invoker);
+
+        // Property AND attribute, since it's unclear which one this
+        // custom element's commandFor/command binding actually reads —
+        // matches how the working, hand-authored Cancel buttons behave
+        // (set as JSX props, which Preact may apply as either).
+        invoker.commandFor = id;
+        invoker.command = "--hide";
+        invoker.setAttribute("commandfor", id);
+        invoker.setAttribute("command", "--hide");
+
+        invoker.click();
+        invoker.remove();
+      });
     };
 
     closeOpenModals();
