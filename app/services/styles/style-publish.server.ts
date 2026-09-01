@@ -151,12 +151,37 @@ export type SizeVariantMapping = {
   numericVariantId: string;
   label: string;
   scalePercent: number;
+  framingLabel: string | null;
 };
 
 function numericIdFromGid(gid: string): string {
   const segments = gid.split("/");
 
   return segments[segments.length - 1] ?? gid;
+}
+
+function extractStaleVariantIds(errors: { message: string }[]): Set<string> {
+  const ids = new Set<string>();
+
+  for (const error of errors) {
+    const match = error.message.match(
+      /variant ids? do not exist:\s*\[([^\]]*)\]/i,
+    );
+
+    if (!match) {
+      continue;
+    }
+
+    for (const id of match[1].split(",")) {
+      const trimmed = id.trim();
+
+      if (trimmed) {
+        ids.add(trimmed);
+      }
+    }
+  }
+
+  return ids;
 }
 
 // One independent variant axis (Size or Framing). A combination is one
@@ -227,14 +252,22 @@ export function parseSizeVariants(productSettings: unknown): SizeVariantMapping[
     return [];
   }
 
-  return sizeVariants.filter(
-    (entry): entry is SizeVariantMapping =>
-      typeof entry === "object" &&
-      entry !== null &&
-      typeof (entry as SizeVariantMapping).numericVariantId === "string" &&
-      typeof (entry as SizeVariantMapping).label === "string" &&
-      typeof (entry as SizeVariantMapping).scalePercent === "number",
-  );
+  return sizeVariants
+    .filter(
+      (entry): entry is SizeVariantMapping =>
+        typeof entry === "object" &&
+        entry !== null &&
+        typeof (entry as SizeVariantMapping).numericVariantId === "string" &&
+        typeof (entry as SizeVariantMapping).label === "string" &&
+        typeof (entry as SizeVariantMapping).scalePercent === "number",
+    )
+    // Entries persisted by a publish before this field existed simply
+    // won't have it — normalized to null rather than left undefined.
+    .map((entry) => ({
+      ...entry,
+      framingLabel:
+        typeof entry.framingLabel === "string" ? entry.framingLabel : null,
+    }));
 }
 
 type UpsertResult = {
@@ -330,6 +363,7 @@ async function upsertShopifyProduct(
   function buildInput(options: {
     forceRecreate: boolean;
     forceReuploadMedia?: boolean;
+    staleVariantIds?: Set<string>;
   }) {
     const reuploadMedia = options.forceRecreate || options.forceReuploadMedia;
 
@@ -393,9 +427,19 @@ async function upsertShopifyProduct(
         ? combinations.map((combination) => {
             const compositeKey = compositeKeyFor(combination);
 
-            const existingVariantId = options.forceRecreate
+            const rawExistingVariantId = options.forceRecreate
               ? null
               : (existingVariantIdByCompositeKey.get(compositeKey) ?? null);
+
+            // Dropped only for ids Shopify just told us are stale (see
+            // the staleVariantIds retry below) — every other existing
+            // variant must keep its id so it updates in place instead
+            // of being recreated as a duplicate.
+            const existingVariantId =
+              rawExistingVariantId &&
+              options.staleVariantIds?.has(numericIdFromGid(rawExistingVariantId))
+                ? null
+                : rawExistingVariantId;
 
             const sizeValue =
               combination.find((entry) => entry.axisName === "Size")
@@ -566,6 +610,38 @@ async function upsertShopifyProduct(
     payload = (await response.json()) as ProductSetResponse;
   }
 
+  // A previously-attached variant's id can also go stale, the same way
+  // media ids can — most commonly because it was deleted directly in
+  // Shopify admin, or left over from an earlier publish that failed
+  // after Shopify's own side had already dropped it. Unlike media,
+  // most of the OTHER existing variants are still perfectly valid and
+  // must keep their id (dropping every id would recreate duplicates
+  // for every combination, not just the stale ones) — so only the
+  // specific stale id(s) Shopify names in the error are cleared before
+  // retrying once.
+  const staleVariantIds = extractStaleVariantIds(
+    payload.data?.productSet?.userErrors ?? [],
+  );
+
+  if (staleVariantIds.size > 0) {
+    ({ input, knownAssets, newAssets } = buildInput({
+      forceRecreate: false,
+      staleVariantIds,
+    }));
+
+    response = await admin.graphql(PRODUCT_SET_MUTATION, {
+      variables: {
+        identifier: style.shopifyProductId
+          ? { id: style.shopifyProductId }
+          : null,
+
+        input,
+      },
+    });
+
+    payload = (await response.json()) as ProductSetResponse;
+  }
+
   assertNoGraphqlErrors(payload);
 
   const userErrors = payload.data?.productSet?.userErrors ?? [];
@@ -623,12 +699,17 @@ async function upsertShopifyProduct(
             combination.find((entry) => entry.axisName === "Size")?.value ??
             null;
 
+          const framingValue =
+            combination.find((entry) => entry.axisName === "Framing")
+              ?.value ?? null;
+
           return {
             compositeKey,
             variantId,
             numericVariantId: numericIdFromGid(variantId),
             label: sizeValue ? sizeValue.label : "Default Title",
             scalePercent: sizeValue?.scalePercent ?? 100,
+            framingLabel: framingValue ? framingValue.label : null,
           };
         })
         .filter((entry): entry is SizeVariantMapping => entry !== null)
@@ -646,6 +727,7 @@ async function upsertShopifyProduct(
             numericVariantId: numericIdFromGid(variantId),
             label: "Default Title",
             scalePercent: 100,
+            framingLabel: null,
           },
         ];
       })();

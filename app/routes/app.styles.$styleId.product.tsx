@@ -6,6 +6,20 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { ProductConfiguration } from "../components/styles/product-configuration";
 import {
+  createStyleFrameColor,
+  deleteStyleFrameColor,
+  reorderStyleFrameColors,
+  type StyleFrameColorInput,
+  updateStyleFrameColor,
+} from "../services/styles/style-frame-colors.server";
+import {
+  createStyleFrameStyle,
+  deleteStyleFrameStyle,
+  reorderStyleFrameStyles,
+  type StyleFrameStyleInput,
+  updateStyleFrameStyle,
+} from "../services/styles/style-frame-styles.server";
+import {
   createStyleFramingOption,
   deleteStyleFramingOption,
   reorderStyleFramingOptions,
@@ -236,6 +250,18 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       compareAtPriceDelta: option.compareAtPriceDelta?.toString() ?? "",
       requiresShipping: option.requiresShipping,
     })),
+
+    frameColors: style.frameColors.map((color) => ({
+      id: color.id,
+      label: color.label,
+      hexColor: color.hexColor,
+    })),
+
+    frameStyles: style.frameStyles.map((frameStyle) => ({
+      id: frameStyle.id,
+      label: frameStyle.label,
+      cssTreatment: frameStyle.cssTreatment,
+    })),
   };
 };
 
@@ -354,6 +380,102 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       );
     }
 
+    if (intent === "addFrameColor" || intent === "editFrameColor") {
+      const input: StyleFrameColorInput = {
+        label: formValue(formData, "label"),
+        hexColor: formValue(formData, "hexColor"),
+      };
+
+      if (intent === "addFrameColor") {
+        await createStyleFrameColor(session.shop, styleId, input);
+      } else {
+        const frameColorId = formValue(formData, "frameColorId");
+
+        await updateStyleFrameColor(session.shop, styleId, frameColorId, input);
+      }
+
+      return redirect(
+        `/app/styles/${styleId}/product?notice=frame-color-saved`,
+      );
+    }
+
+    if (intent === "deleteFrameColor") {
+      const frameColorId = formValue(formData, "frameColorId");
+
+      await deleteStyleFrameColor(session.shop, styleId, frameColorId);
+
+      return redirect(
+        `/app/styles/${styleId}/product?notice=frame-color-deleted`,
+      );
+    }
+
+    if (intent === "reorderFrameColors") {
+      const orderedFrameColorIds = formData
+        .getAll("frameColorId")
+        .filter(
+          (value): value is string =>
+            typeof value === "string" && value.length > 0,
+        );
+
+      if (orderedFrameColorIds.length === 0) {
+        throw new Error("Color order is required.");
+      }
+
+      await reorderStyleFrameColors(session.shop, styleId, orderedFrameColorIds);
+
+      return redirect(
+        `/app/styles/${styleId}/product?notice=frame-colors-reordered`,
+      );
+    }
+
+    if (intent === "addFrameStyle" || intent === "editFrameStyle") {
+      const input: StyleFrameStyleInput = {
+        label: formValue(formData, "label"),
+        cssTreatment: formValue(formData, "cssTreatment"),
+      };
+
+      if (intent === "addFrameStyle") {
+        await createStyleFrameStyle(session.shop, styleId, input);
+      } else {
+        const frameStyleId = formValue(formData, "frameStyleId");
+
+        await updateStyleFrameStyle(session.shop, styleId, frameStyleId, input);
+      }
+
+      return redirect(
+        `/app/styles/${styleId}/product?notice=frame-style-saved`,
+      );
+    }
+
+    if (intent === "deleteFrameStyle") {
+      const frameStyleId = formValue(formData, "frameStyleId");
+
+      await deleteStyleFrameStyle(session.shop, styleId, frameStyleId);
+
+      return redirect(
+        `/app/styles/${styleId}/product?notice=frame-style-deleted`,
+      );
+    }
+
+    if (intent === "reorderFrameStyles") {
+      const orderedFrameStyleIds = formData
+        .getAll("frameStyleId")
+        .filter(
+          (value): value is string =>
+            typeof value === "string" && value.length > 0,
+        );
+
+      if (orderedFrameStyleIds.length === 0) {
+        throw new Error("Style order is required.");
+      }
+
+      await reorderStyleFrameStyles(session.shop, styleId, orderedFrameStyleIds);
+
+      return redirect(
+        `/app/styles/${styleId}/product?notice=frame-styles-reordered`,
+      );
+    }
+
     const productTitle = formValue(formData, "productTitle");
 
     const productDescription = formValue(formData, "productDescription");
@@ -414,6 +536,12 @@ const notices: Record<string, string> = {
   "framing-saved": "Framing option saved",
   "framing-deleted": "Framing option deleted",
   "framing-reordered": "Framing options reordered",
+  "frame-color-saved": "Frame color saved",
+  "frame-color-deleted": "Frame color deleted",
+  "frame-colors-reordered": "Frame colors reordered",
+  "frame-style-saved": "Frame style saved",
+  "frame-style-deleted": "Frame style deleted",
+  "frame-styles-reordered": "Frame styles reordered",
 };
 
 export default function StyleProduct() {
@@ -476,6 +604,8 @@ export default function StyleProduct() {
         collections={data.collections}
         sizeOptions={data.sizeOptions}
         framingOptions={data.framingOptions}
+        frameColors={data.frameColors}
+        frameStyles={data.frameStyles}
         editable={data.editable}
       />
 
