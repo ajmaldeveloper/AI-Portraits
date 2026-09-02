@@ -135,16 +135,16 @@ class AiArtGenerator extends HTMLElement {
             .filter((entry) => entry.choice)
         : [];
 
-      // The one customer- and merchant-visible artwork link: a
-      // readable label as the property's key (all Shopify actually
-      // lets a property show — there's no way to give it link text
-      // separate from its value) with the short redirect link (no
-      // query string/signature, beyond an optional frame/mat color) as
-      // the value, so it reads as "Preview my portrait: <short link>"
-      // rather than a wall of raw URL text. When the selected variant
-      // carries a frameColor, it (and any extra color choice) is
-      // passed through so the linked copy has the same mat + frame
-      // border composited in as what was actually ordered — see
+      // The artwork link: kept private (a "_"-prefixed key, which
+      // Shopify hides from the cart, checkout, and order confirmation)
+      // — visible to the merchant in the order's own admin view, not
+      // to the customer. The short redirect link (no query
+      // string/signature, beyond an optional frame/mat color) is the
+      // value, so even there it reads as a clean short URL rather than
+      // a wall of raw text. When the selected variant carries a
+      // frameColor, it (and any extra color choice) is passed through
+      // so the linked copy has the same mat + frame border composited
+      // in as what was actually ordered — see
       // media.style-assets.$assetId.ts. Uploaded-texture (IMAGE_SWATCH)
       // frames aren't baked into the linked file (see that route's own
       // comment on the scope boundary). The link itself still downloads
@@ -173,7 +173,7 @@ class AiArtGenerator extends HTMLElement {
         }
 
         event.formData.set(
-          "properties[Preview my portrait]",
+          "properties[_ai_art_preview]",
           artworkUrl.toString(),
         );
       }
