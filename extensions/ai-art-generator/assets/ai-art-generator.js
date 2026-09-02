@@ -105,14 +105,30 @@ class AiArtGenerator extends HTMLElement {
       // readable label as the property's key (all Shopify actually
       // lets a property show — there's no way to give it link text
       // separate from its value) with the short redirect link (no
-      // query string/signature) as the value, so it reads as "Preview
-      // my portrait: <short link>" rather than a wall of raw URL text.
-      // The link itself still downloads on click (Content-Disposition:
+      // query string/signature, beyond an optional frame color) as the
+      // value, so it reads as "Preview my portrait: <short link>"
+      // rather than a wall of raw URL text. When the selected variant
+      // carries a frameColor, it's passed through so the linked copy
+      // has the same mat + frame border composited in as what was
+      // actually ordered — see media.style-assets.$assetId.ts. The
+      // link itself still downloads on click (Content-Disposition:
       // attachment on the redirect target).
       if (this.generationId) {
+        const artworkUrl = new URL(
+          `${this.proxyRoot}/artwork/${encodeURIComponent(this.generationId)}`,
+          window.location.origin,
+        );
+
+        if (matchedSize?.frameColor) {
+          artworkUrl.searchParams.set(
+            "frame",
+            matchedSize.frameColor.replace(/^#/, ""),
+          );
+        }
+
         event.formData.set(
           "properties[Preview my portrait]",
-          `${window.location.origin}${this.proxyRoot}/artwork/${encodeURIComponent(this.generationId)}`,
+          artworkUrl.toString(),
         );
       }
 

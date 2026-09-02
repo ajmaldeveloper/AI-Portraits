@@ -4,6 +4,56 @@ import sharp from "sharp";
 import { verifySignedStyleAssetRequest } from "../services/media/media-signing.server";
 import { getStyleAssetBinary } from "../services/styles/style-product-media.server";
 
+// A flat mat + solid frame border, proportional to the image's own
+// width so it scales sensibly across print sizes — deliberately not
+// the beveled-gradient look the storefront CSS preview uses (a real
+// deliverable file shouldn't carry a fake drop shadow or gradient,
+// which only make sense as an on-screen mockup convention).
+function hexToRgb(hex: string) {
+  const value = Number.parseInt(hex, 16);
+
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255,
+  };
+}
+
+async function applyFrame(
+  pipeline: ReturnType<typeof sharp>,
+  frameHex: string,
+) {
+  const metadata = await pipeline.metadata();
+
+  const baseWidth = metadata.width ?? 1024;
+
+  const matThickness = Math.max(8, Math.round(baseWidth * 0.035));
+
+  const borderThickness = Math.max(14, Math.round(baseWidth * 0.05));
+
+  // sharp's .extend() doesn't stack across chained calls on the same
+  // pipeline — the second call's config replaces the first's rather
+  // than adding to it — so the mat has to be materialized to a buffer
+  // before the frame border extend runs on a fresh pipeline.
+  const withMat = await pipeline
+    .extend({
+      top: matThickness,
+      bottom: matThickness,
+      left: matThickness,
+      right: matThickness,
+      background: { r: 250, g: 248, b: 244 },
+    })
+    .toBuffer();
+
+  return sharp(withMat).extend({
+    top: borderThickness,
+    bottom: borderThickness,
+    left: borderThickness,
+    right: borderThickness,
+    background: hexToRgb(frameHex),
+  });
+}
+
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const assetId = params.assetId;
 
@@ -20,6 +70,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const expiresRaw = url.searchParams.get("expires");
 
   const scaleRaw = url.searchParams.get("scale");
+
+  const frame = url.searchParams.get("frame") ?? "";
 
   const signature = url.searchParams.get("signature");
 
@@ -41,6 +93,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     shop,
     expires,
     scale,
+    frame,
     signature,
   });
 
@@ -83,7 +136,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     "Content-Disposition": `attachment; filename="artwork-${assetId}.${extension}"`,
   };
 
-  if (scale >= 100 || !contentType.startsWith("image/")) {
+  const isImage = contentType.startsWith("image/");
+
+  if ((scale >= 100 && !frame) || !isImage) {
     /*
      * getStyleAssetBinary returns a non-null, ArrayBuffer-backed
      * Uint8Array. Use the underlying sliced ArrayBuffer as the Response
@@ -97,15 +152,23 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     return new Response(body, { headers });
   }
 
-  const image = sharp(asset.binaryData);
+  let pipeline = sharp(asset.binaryData);
 
-  const metadata = await image.metadata();
+  if (scale < 100) {
+    const metadata = await pipeline.metadata();
 
-  const nativeWidth = metadata.width ?? 0;
+    const nativeWidth = metadata.width ?? 0;
 
-  const targetWidth = Math.max(1, Math.round((nativeWidth * scale) / 100));
+    const targetWidth = Math.max(1, Math.round((nativeWidth * scale) / 100));
 
-  const resized = await image.resize({ width: targetWidth }).toBuffer();
+    pipeline = sharp(await pipeline.resize({ width: targetWidth }).toBuffer());
+  }
 
-  return new Response(resized, { headers });
+  if (frame) {
+    pipeline = await applyFrame(pipeline, frame);
+  }
+
+  const output = await pipeline.toBuffer();
+
+  return new Response(output, { headers });
 };

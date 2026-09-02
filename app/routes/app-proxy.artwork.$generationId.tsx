@@ -31,10 +31,25 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     return new Response("Artwork not found.", { status: 404 });
   }
 
+  // Optional — set by the storefront JS from the Framing option that
+  // was actually selected at add-to-cart time, so the linked image
+  // matches what was ordered (a mat + solid frame border composited
+  // on read, not baked into the stored asset — see
+  // media.style-assets.$assetId.ts). Only ever changes what this one
+  // link's own copy looks like, never the order's real Framing
+  // variant/price, so it's fine for the client to specify directly.
+  const frameParam = new URL(request.url).searchParams.get("frame");
+
+  const frame =
+    frameParam && /^[0-9a-f]{6}$/i.test(frameParam) ? frameParam : null;
+
   const signedUrl = createSignedStyleAssetUrl(
     request.url,
     status.resultAssetId,
     session.shop,
+    undefined,
+    100,
+    frame,
   );
 
   return new Response(null, {
