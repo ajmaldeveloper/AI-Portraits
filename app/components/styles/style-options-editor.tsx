@@ -424,7 +424,11 @@ function validateChoiceForm(
     }
   }
 
-  if (option.type === "COLOR_SWATCH" && !/^#[0-9a-fA-F]{6}$/.test(values.hexColor.trim())) {
+  if (
+    option.type === "COLOR_SWATCH" &&
+    values.hexColor.trim() &&
+    !/^#[0-9a-fA-F]{6}$/.test(values.hexColor.trim())
+  ) {
     errors.hexColor = "Enter a valid hex color (e.g. #1a1a1a).";
   }
 
@@ -529,6 +533,11 @@ function ChoiceFormFields({
           value={values.hexColor}
           onInput={(event: Event) => onChange({ hexColor: eventValue(event) })}
           error={errors.hexColor}
+          details={
+            option.axisRole === "FRAMING"
+              ? "Leave empty for no visual frame (e.g. a \"No Frame\" choice)."
+              : undefined
+          }
         />
       ) : null}
 

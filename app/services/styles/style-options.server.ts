@@ -312,17 +312,22 @@ async function validateChoiceInput(
     scalePercent = value;
   }
 
-  // Color only means anything for a COLOR_SWATCH-type option.
+  // Color only means anything for a COLOR_SWATCH-type option, and even
+  // then it's optional — a colorless choice (e.g. "No Frame" on a
+  // Framing axis) is exactly the signal that means "no visual frame
+  // for this choice," the same way it did on the old, single-purpose
+  // Framing model. Only the *format* is validated when something was
+  // actually entered.
   let hexColor: string | null = null;
 
   if (option.type === "COLOR_SWATCH") {
     const value = input.hexColor?.trim() ?? "";
 
-    if (!hexColorPattern.test(value)) {
+    if (value && !hexColorPattern.test(value)) {
       throw new Error("Enter a valid hex color (e.g. #1a1a1a).");
     }
 
-    hexColor = value;
+    hexColor = value || null;
   }
 
   // Uploaded texture + thickness only mean anything for an
