@@ -12,6 +12,7 @@ export type FramingOptionView = {
   priceDelta: string;
   compareAtPriceDelta: string;
   requiresShipping: boolean;
+  frameColor: string;
 };
 
 type FramingFormState = {
@@ -19,6 +20,7 @@ type FramingFormState = {
   priceDelta: string;
   compareAtPriceDelta: string;
   requiresShipping: boolean;
+  frameColor: string;
 };
 
 const blankFramingValues: FramingFormState = {
@@ -26,6 +28,7 @@ const blankFramingValues: FramingFormState = {
   priceDelta: "0",
   compareAtPriceDelta: "",
   requiresShipping: true,
+  frameColor: "",
 };
 
 function framingValuesOf(option: FramingOptionView): FramingFormState {
@@ -34,6 +37,7 @@ function framingValuesOf(option: FramingOptionView): FramingFormState {
     priceDelta: option.priceDelta,
     compareAtPriceDelta: option.compareAtPriceDelta,
     requiresShipping: option.requiresShipping,
+    frameColor: option.frameColor,
   };
 }
 
@@ -44,6 +48,8 @@ function checkedValue(event: Event): boolean {
 }
 
 type FramingFormErrors = Partial<Record<keyof FramingFormState, string>>;
+
+const hexColorPattern = /^#[0-9a-fA-F]{6}$/;
 
 function validateFramingForm(
   values: FramingFormState,
@@ -61,6 +67,10 @@ function validateFramingForm(
     )
   ) {
     errors.label = "A framing option with this name already exists.";
+  }
+
+  if (values.frameColor.trim() && !hexColorPattern.test(values.frameColor.trim())) {
+    errors.frameColor = "Enter a valid hex color (e.g. #1a1a1a).";
   }
 
   return errors;
@@ -128,6 +138,17 @@ function FramingFormFields({
           onChange({ requiresShipping: checkedValue(event) })
         }
         details="Turn on for a real framed product; leave off for an unframed/digital choice."
+      />
+
+      <s-color-field
+        label="Frame color (optional)"
+        name="frameColor"
+        value={values.frameColor}
+        onInput={(event: Event) =>
+          onChange({ frameColor: eventValue(event) })
+        }
+        error={errors.frameColor}
+        details="Shown as a border around the customer's result image on the storefront when this option is selected. Leave empty for no visual frame (e.g. a 'No Frame' option)."
       />
     </s-stack>
   );
@@ -245,7 +266,8 @@ function EditFramingModal({
     values.label !== initialValues.label ||
     values.priceDelta !== initialValues.priceDelta ||
     values.compareAtPriceDelta !== initialValues.compareAtPriceDelta ||
-    values.requiresShipping !== initialValues.requiresShipping;
+    values.requiresShipping !== initialValues.requiresShipping ||
+    values.frameColor !== initialValues.frameColor;
 
   return (
     <s-modal
@@ -408,7 +430,23 @@ function SortableFramingRow({
           justifyContent="space-between"
         >
           <s-stack direction="block" gap="small-200">
-            <s-text type="strong">{option.label}</s-text>
+            <s-stack direction="inline" gap="small-200" alignItems="center">
+              {option.frameColor ? (
+                <div
+                  aria-hidden="true"
+                  style={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: "50%",
+                    background: option.frameColor,
+                    border: "1px solid rgba(0,0,0,0.15)",
+                    flex: "0 0 auto",
+                  }}
+                />
+              ) : null}
+
+              <s-text type="strong">{option.label}</s-text>
+            </s-stack>
 
             <s-stack direction="inline" gap="small">
               <s-badge tone="neutral">

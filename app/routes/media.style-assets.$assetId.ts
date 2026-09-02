@@ -60,15 +60,27 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   const contentType = asset.mimeType || "application/octet-stream";
 
+  const extension = contentType.startsWith("image/")
+    ? contentType.slice("image/".length).split("+")[0]
+    : "bin";
+
   // Content is deterministic per assetId+scale — assets are never
   // mutated after creation (only created/deleted) — so this is safe to
   // cache aggressively. The URL is already HMAC-signed, so caching
   // publicly doesn't leak anything a bearer of the URL couldn't already
   // fetch directly.
+  //
+  // Content-Disposition: attachment only affects a direct top-level
+  // navigation to this URL (e.g. clicking the "See your artwork" cart
+  // line item link) — it's ignored for the same URL used as an <img
+  // src>, which is how the storefront itself renders it — so this is
+  // safe to set unconditionally rather than needing a separate
+  // download-only endpoint.
   const headers = {
     "Content-Type": contentType,
     "Cache-Control": "public, max-age=31536000, immutable",
     "X-Content-Type-Options": "nosniff",
+    "Content-Disposition": `attachment; filename="artwork-${assetId}.${extension}"`,
   };
 
   if (scale >= 100 || !contentType.startsWith("image/")) {

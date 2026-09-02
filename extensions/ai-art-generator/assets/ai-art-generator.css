@@ -279,88 +279,24 @@ textarea.aig-control {
   -webkit-touch-callout: none;
 }
 
-.aig-frame-picker {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.aig-swatch-group,
-.aig-style-swatch-group {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-}
-
-.aig-swatch {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-}
-
-.aig-swatch[aria-pressed="true"] {
-  border-color: var(--aig-focus);
-}
-
-.aig-style-swatch {
-  padding: 6px 12px;
-  font-family: var(--aig-font);
-  font-size: 13px;
-  color: var(--aig-text);
-  background: #fff;
-  border: 1px solid var(--aig-border);
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.aig-style-swatch[aria-pressed="true"] {
-  color: #fff;
-  background: var(--aig-focus);
-  border-color: var(--aig-focus);
-}
-
+/* border-radius forced with !important on both the wrap and the image
+   — some theme image-container styles (e.g. a media card that only
+   rounds its bottom corners) otherwise bleed into this element and
+   make the border look mismatched corner-to-corner. */
 .aig-frame-wrap {
   display: inline-block;
   max-width: 100%;
-  border-radius: var(--aig-radius);
+  border-radius: var(--aig-radius) !important;
   overflow: hidden;
 }
 
 .aig-frame-wrap img {
-  border-radius: inherit;
+  display: block;
+  border-radius: inherit !important;
 }
 
-/* Thin: a simple solid border directly against the image. */
-.aig-frame-wrap.aig-frame-thin {
+.aig-frame-wrap.aig-framed {
   border: 6px solid var(--aig-frame-color, transparent);
-}
-
-/* Gallery: a thicker outer border with an inner mat gap between the
-   border and the image. */
-.aig-frame-wrap.aig-frame-gallery {
-  padding: 14px;
-  border: 10px solid var(--aig-frame-color, transparent);
-  background: #faf9f7;
-}
-
-.aig-frame-wrap.aig-frame-gallery img {
-  border-radius: 2px;
-}
-
-/* Classic: a solid border with an inset line and outer drop shadow for
-   a beveled look. */
-.aig-frame-wrap.aig-frame-classic {
-  border: 10px solid var(--aig-frame-color, transparent);
-  box-shadow:
-    inset 0 0 0 2px rgba(255, 255, 255, 0.6),
-    0 6px 16px rgba(0, 0, 0, 0.18);
 }
 
 .aig-spinner {

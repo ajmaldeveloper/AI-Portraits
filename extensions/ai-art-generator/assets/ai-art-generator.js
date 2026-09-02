@@ -40,17 +40,6 @@ class AiArtGenerator extends HTMLElement {
     // variant the theme's native size picker has selected at
     // add-to-cart time.
     this.resultUrls = {};
-
-    // { label, hexColor }[] / { label, cssTreatment }[] — from the app
-    // proxy. Purely visual: independent of Shopify's own Framing
-    // variant (any color/style combination is valid), so selecting one
-    // never affects price, shipping, or which variant gets added to
-    // cart — only the CSS border drawn around the result image and a
-    // line item property recording the choice.
-    this.frameColors = [];
-    this.frameStyles = [];
-    this.selectedFrameColor = null;
-    this.selectedFrameStyle = null;
   }
 
   connectedCallback() {
@@ -121,28 +110,13 @@ class AiArtGenerator extends HTMLElement {
       // above stays purely for backend/fulfillment use. This visible
       // twin is what actually lets the customer (and the merchant, in
       // the order's line item) see/click through to the specific
-      // generated image tied to this cart line, since the cart's own
-      // thumbnail always stays the product's stock photo — Shopify's
-      // native cart doesn't support swapping a line item's thumbnail
-      // per-order from a property, only from the variant/product image.
-      event.formData.set("properties[Your artwork]", resultImageUrl);
+      // generated image tied to this cart line — its value is served
+      // with a Content-Disposition: attachment header, so clicking it
+      // downloads the file rather than just opening the raw URL.
+      event.formData.set("properties[See your artwork]", resultImageUrl);
 
       if (matchedSize) {
         event.formData.set("properties[Print size]", matchedSize.label);
-      }
-
-      if (this.selectedFrameColor) {
-        event.formData.set(
-          "properties[Frame color]",
-          this.selectedFrameColor,
-        );
-      }
-
-      if (this.selectedFrameStyle) {
-        event.formData.set(
-          "properties[Frame style]",
-          this.selectedFrameStyle,
-        );
       }
 
       for (const [key, value] of Object.entries(this.submittedFieldValues)) {
@@ -162,6 +136,17 @@ class AiArtGenerator extends HTMLElement {
           "properties[Personalization]",
           this.submittedPersonalization,
         );
+      }
+    });
+
+    // Reacts to the theme's own native Size/Framing picker so the
+    // frame border updates live as the customer switches variants,
+    // without requiring a page reload — same pattern as this shop's
+    // Product Options app (listens for the cart form's own "id" field
+    // changing, which the theme's variant-picker JS keeps in sync).
+    form.addEventListener("change", (event) => {
+      if (event.target?.name === "id") {
+        this.updateFramePreview();
       }
     });
   }
@@ -218,14 +203,6 @@ class AiArtGenerator extends HTMLElement {
 
       this.fields = payload.fields || [];
       this.sizeOptions = payload.sizeOptions || [];
-      this.frameColors = payload.frameColors || [];
-      this.frameStyles = payload.frameStyles || [];
-
-      // Default to the first of each so a frame is visible the moment
-      // a result appears, without requiring the customer to click a
-      // swatch first — they can still switch afterward.
-      this.selectedFrameColor = this.frameColors[0]?.label ?? null;
-      this.selectedFrameStyle = this.frameStyles[0]?.label ?? null;
 
       this.renderForm();
     } catch {
@@ -524,11 +501,9 @@ class AiArtGenerator extends HTMLElement {
   renderResult(resultUrl) {
     this.innerHTML = `
       <div class="aig-result">
-        ${this.renderFrameSwatchesHtml()}
         <div class="aig-frame-wrap">
           <img src="${resultUrl}" alt="Your personalized artwork" draggable="false" />
         </div>
-        <p class="aig-status-text">Ready — add to cart below to order this.</p>
       </div>
     `;
 
@@ -546,87 +521,16 @@ class AiArtGenerator extends HTMLElement {
       event.preventDefault(),
     );
 
-    this.wireFrameSwatches();
     this.updateFramePreview();
   }
 
-  // Swatches are rendered above the result image, below any other
-  // options this element itself shows — this element renders nothing
-  // else at result time, so that's simply directly above the image.
-  renderFrameSwatchesHtml() {
-    if (this.frameColors.length === 0 && this.frameStyles.length === 0) {
-      return "";
-    }
-
-    const colorButtons = this.frameColors
-      .map(
-        (color) => `
-          <button
-            type="button"
-            class="aig-swatch"
-            style="background:${escapeHtml(color.hexColor)}"
-            data-aig-frame-color="${escapeHtml(color.label)}"
-            aria-pressed="${this.selectedFrameColor === color.label}"
-            aria-label="${escapeHtml(color.label)}"
-            title="${escapeHtml(color.label)}"
-          ></button>
-        `,
-      )
-      .join("");
-
-    const styleButtons = this.frameStyles
-      .map(
-        (style) => `
-          <button
-            type="button"
-            class="aig-style-swatch"
-            data-aig-frame-style="${escapeHtml(style.label)}"
-            aria-pressed="${this.selectedFrameStyle === style.label}"
-          >${escapeHtml(style.label)}</button>
-        `,
-      )
-      .join("");
-
-    return `
-      <div class="aig-frame-picker">
-        ${colorButtons ? `<div class="aig-swatch-group">${colorButtons}</div>` : ""}
-        ${styleButtons ? `<div class="aig-style-swatch-group">${styleButtons}</div>` : ""}
-      </div>
-    `;
-  }
-
-  wireFrameSwatches() {
-    this.querySelectorAll("[data-aig-frame-color]").forEach((button) => {
-      button.addEventListener("click", () => {
-        this.selectedFrameColor = button.dataset.aigFrameColor;
-
-        this.querySelectorAll("[data-aig-frame-color]").forEach((other) => {
-          other.setAttribute(
-            "aria-pressed",
-            String(other === button),
-          );
-        });
-
-        this.updateFramePreview();
-      });
-    });
-
-    this.querySelectorAll("[data-aig-frame-style]").forEach((button) => {
-      button.addEventListener("click", () => {
-        this.selectedFrameStyle = button.dataset.aigFrameStyle;
-
-        this.querySelectorAll("[data-aig-frame-style]").forEach((other) => {
-          other.setAttribute(
-            "aria-pressed",
-            String(other === button),
-          );
-        });
-
-        this.updateFramePreview();
-      });
-    });
-  }
-
+  // Resolves the frameColor carried by whichever Size/Framing variant
+  // the theme's native picker currently has selected, and draws (or
+  // clears) the CSS border around the result image accordingly — a
+  // Framing option only sets frameColor when it's an actual physical
+  // frame (e.g. not a "No Frame" row), so this naturally shows the
+  // border only when a real framed choice is selected. Safe to call
+  // any time — a no-op before a result exists.
   updateFramePreview() {
     const wrap = this.querySelector(".aig-frame-wrap");
 
@@ -634,27 +538,23 @@ class AiArtGenerator extends HTMLElement {
       return;
     }
 
-    wrap.classList.remove("aig-frame-thin", "aig-frame-gallery", "aig-frame-classic");
+    const selectedVariantId = this.cartForm
+      ? getSelectedVariantId(this.cartForm)
+      : null;
 
-    const color = this.frameColors.find(
-      (entry) => entry.label === this.selectedFrameColor,
+    const matched = this.sizeOptions.find(
+      (option) => option.variantId === selectedVariantId,
     );
 
-    const style = this.frameStyles.find(
-      (entry) => entry.label === this.selectedFrameStyle,
-    );
-
-    if (!color) {
+    if (!matched?.frameColor) {
+      wrap.classList.remove("aig-framed");
       wrap.style.removeProperty("--aig-frame-color");
 
       return;
     }
 
-    wrap.style.setProperty("--aig-frame-color", color.hexColor);
-
-    const treatment = style?.cssTreatment || "thin";
-
-    wrap.classList.add(`aig-frame-${treatment}`);
+    wrap.style.setProperty("--aig-frame-color", matched.frameColor);
+    wrap.classList.add("aig-framed");
   }
 }
 

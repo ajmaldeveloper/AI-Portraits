@@ -151,7 +151,12 @@ export type SizeVariantMapping = {
   numericVariantId: string;
   label: string;
   scalePercent: number;
-  framingLabel: string | null;
+  // The Framing axis value's own frameColor, if any — null means no
+  // visual frame for this variant (e.g. a "No Frame" choice, or a style
+  // with no Framing axis at all). Drives whether the storefront draws a
+  // CSS border around the result image for whichever variant the
+  // customer currently has selected.
+  frameColor: string | null;
 };
 
 function numericIdFromGid(gid: string): string {
@@ -199,6 +204,9 @@ type AxisValue = {
   requiresShipping: boolean | null;
   // null = this axis never affects image resolution (only Size does).
   scalePercent: number | null;
+  // null = this axis never carries a visual frame color (only Framing
+  // does, and even then only when the merchant set one).
+  frameColor: string | null;
 };
 
 type VariantAxis = {
@@ -265,8 +273,8 @@ export function parseSizeVariants(productSettings: unknown): SizeVariantMapping[
     // won't have it — normalized to null rather than left undefined.
     .map((entry) => ({
       ...entry,
-      framingLabel:
-        typeof entry.framingLabel === "string" ? entry.framingLabel : null,
+      frameColor:
+        typeof entry.frameColor === "string" ? entry.frameColor : null,
     }));
 }
 
@@ -309,6 +317,7 @@ async function upsertShopifyProduct(
           : null,
         requiresShipping: null,
         scalePercent: option.scalePercent,
+        frameColor: null,
       })),
     });
   }
@@ -325,6 +334,7 @@ async function upsertShopifyProduct(
           : null,
         requiresShipping: option.requiresShipping,
         scalePercent: null,
+        frameColor: option.frameColor,
       })),
     });
   }
@@ -709,7 +719,7 @@ async function upsertShopifyProduct(
             numericVariantId: numericIdFromGid(variantId),
             label: sizeValue ? sizeValue.label : "Default Title",
             scalePercent: sizeValue?.scalePercent ?? 100,
-            framingLabel: framingValue ? framingValue.label : null,
+            frameColor: framingValue?.frameColor ?? null,
           };
         })
         .filter((entry): entry is SizeVariantMapping => entry !== null)
@@ -727,7 +737,7 @@ async function upsertShopifyProduct(
             numericVariantId: numericIdFromGid(variantId),
             label: "Default Title",
             scalePercent: 100,
-            framingLabel: null,
+            frameColor: null,
           },
         ];
       })();

@@ -81,26 +81,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       // picker back to the right result-image URL from resultUrls (see
       // app-proxy.generations.$generationId.tsx) — numericVariantId
       // matches what the cart form's own "id" field submits.
+      // frameColor (null when this variant has no visual frame, e.g. a
+      // "No Frame" choice) drives the storefront's CSS border — see
+      // SizeVariantMapping's own comment for where it comes from.
       sizeOptions: parseSizeVariants(style.productSettings).map((entry) => ({
         variantId: entry.numericVariantId,
         label: entry.label,
         scalePercent: entry.scalePercent,
-        framingLabel: entry.framingLabel,
-      })),
-
-      // Color/style swatches for the visual frame preview — fully
-      // independent of Framing's own Shopify variants (any combination
-      // is valid), so these come straight from the Style's own
-      // relations rather than the publish-time sizeVariants mapping,
-      // and stay current even before a republish.
-      frameColors: style.frameColors.map((color) => ({
-        label: color.label,
-        hexColor: color.hexColor,
-      })),
-
-      frameStyles: style.frameStyles.map((frameStyle) => ({
-        label: frameStyle.label,
-        cssTreatment: frameStyle.cssTreatment,
+        frameColor: entry.frameColor,
       })),
     },
     {

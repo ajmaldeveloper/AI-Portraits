@@ -12,7 +12,10 @@ export type StyleFramingOptionInput = {
   priceDelta: string;
   compareAtPriceDelta: string | null;
   requiresShipping: boolean;
+  frameColor: string | null;
 };
+
+const hexColorPattern = /^#[0-9a-fA-F]{6}$/;
 
 function requiredText(value: string, fieldName: string) {
   const normalized = value.trim();
@@ -44,7 +47,13 @@ function validateInput(input: StyleFramingOptionInput) {
     );
   }
 
-  return { ...input, label };
+  const frameColor = input.frameColor?.trim() || null;
+
+  if (frameColor && !hexColorPattern.test(frameColor)) {
+    throw new Error("Enter a valid hex color (e.g. #1a1a1a).");
+  }
+
+  return { ...input, label, frameColor };
 }
 
 async function requireEditableStyle(shop: string, styleId: string) {
@@ -108,6 +117,7 @@ export async function createStyleFramingOption(
       priceDelta: normalized.priceDelta,
       compareAtPriceDelta: normalized.compareAtPriceDelta,
       requiresShipping: normalized.requiresShipping,
+      frameColor: normalized.frameColor,
       position: (lastOption?.position ?? -1) + 1,
     },
   });
@@ -136,6 +146,7 @@ export async function updateStyleFramingOption(
       priceDelta: normalized.priceDelta,
       compareAtPriceDelta: normalized.compareAtPriceDelta,
       requiresShipping: normalized.requiresShipping,
+      frameColor: normalized.frameColor,
     },
   });
 

@@ -116,8 +116,6 @@ model Style {
   generations    Generation[]
   sizeOptions    StyleSizeOption[]
   framingOptions StyleFramingOption[]
-  frameColors    StyleFrameColor[]
-  frameStyles    StyleFrameStyle[]
 
   @@index([shop, status])
   @@index([shop, createdAt])
@@ -289,7 +287,7 @@ model StyleSizeOption {
 }
 
 // Per-style Framing option — a second, independent variant axis from
-// Size. Deliberately one free-text axis (e.g. "Unframed", "Framed -
+// Size. Deliberately one free-text axis (e.g. "No Frame", "Framed -
 // Black", "Framed - Natural Wood") rather than separate conditional
 // "frame color"/"frame style" sub-options, to avoid Shopify's
 // combinatorial variant explosion. Unlike everything else in this
@@ -299,6 +297,12 @@ model StyleSizeOption {
 // basePrice if no sizes exist), not an absolute price. Same
 // stable-id-matching reasoning as StyleSizeOption.
 //
+// frameColor is purely app-owned visual data — never sent to Shopify
+// (its productSet mutation has no native option-value color swatch
+// input). Null means "no visual frame for this row" (e.g. a "No
+// Frame" option) — rendered as a CSS border around the customer's
+// result image, by this style's own theme extension JS, whenever the
+// customer's currently-selected Framing variant carries one.
 model StyleFramingOption {
   id String @id @default(cuid())
 
@@ -308,56 +312,8 @@ model StyleFramingOption {
   priceDelta          Decimal
   compareAtPriceDelta Decimal?
   requiresShipping    Boolean
+  frameColor          String?
   position            Int      @default(0)
-
-  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([styleId, label])
-  @@index([styleId, position])
-}
-
-// Reusable, merchant-managed list of frame colors, edited on the
-// Product tab the same way Sizes/Framing are. Purely app-owned visual
-// data — never sent to Shopify (its productSet mutation has no native
-// option-value color swatch input) and not tied to any one Framing
-// row: rendered as independent swatches on the storefront (any
-// combination with a Frame style is valid), and as a CSS border/mat
-// color around the customer's result image, by this style's own theme
-// extension JS.
-model StyleFrameColor {
-  id String @id @default(cuid())
-
-  styleId String
-
-  label    String
-  hexColor String
-  position Int    @default(0)
-
-  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([styleId, label])
-  @@index([styleId, position])
-}
-
-// Reusable, merchant-managed list of frame border treatments. label is
-// the merchant-facing display name (freely renameable); cssTreatment
-// is which of this app's fixed CSS implementations it maps to — new
-// treatments can't be invented per merchant, only re-labeled. Same
-// independent-swatch treatment as StyleFrameColor — see its comment.
-model StyleFrameStyle {
-  id String @id @default(cuid())
-
-  styleId String
-
-  label        String
-  cssTreatment String // "thin" | "gallery" | "classic"
-  position     Int    @default(0)
 
   style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
 

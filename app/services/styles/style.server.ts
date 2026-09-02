@@ -208,18 +208,6 @@ export async function getStyleForShop(shop: string, styleId: string) {
         },
       },
 
-      frameColors: {
-        orderBy: {
-          position: "asc",
-        },
-      },
-
-      frameStyles: {
-        orderBy: {
-          position: "asc",
-        },
-      },
-
       assets: {
         orderBy: {
           position: "asc",
