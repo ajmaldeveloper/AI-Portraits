@@ -95,10 +95,13 @@ export function verifySignedStyleAssetRequest(input: {
     return false;
   }
 
+  // Above 100 upscales (see media.style-assets.$assetId.ts) — capped
+  // at 400 to match the ceiling style-size-options.server.ts enforces
+  // on StyleSizeOption.scalePercent.
   if (
     !Number.isInteger(input.scale) ||
     input.scale < 1 ||
-    input.scale > 100
+    input.scale > 400
   ) {
     return false;
   }

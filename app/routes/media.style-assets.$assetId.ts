@@ -138,7 +138,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   const isImage = contentType.startsWith("image/");
 
-  if ((scale >= 100 && !frame) || !isImage) {
+  if ((scale === 100 && !frame) || !isImage) {
     /*
      * getStyleAssetBinary returns a non-null, ArrayBuffer-backed
      * Uint8Array. Use the underlying sliced ArrayBuffer as the Response
@@ -154,14 +154,23 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   let pipeline = sharp(asset.binaryData);
 
-  if (scale < 100) {
+  if (scale !== 100) {
     const metadata = await pipeline.metadata();
 
     const nativeWidth = metadata.width ?? 0;
 
     const targetWidth = Math.max(1, Math.round((nativeWidth * scale) / 100));
 
-    pipeline = sharp(await pipeline.resize({ width: targetWidth }).toBuffer());
+    // lanczos3 explicitly — sharp's own default, but named here since
+    // it's the one that matters for scale > 100 (upscaling): a sharp,
+    // well-regarded resampling kernel rather than a soft/blurry one.
+    // This is high-quality interpolation, not AI super-resolution — no
+    // detail beyond what's already in the source image is invented.
+    pipeline = sharp(
+      await pipeline
+        .resize({ width: targetWidth, kernel: sharp.kernel.lanczos3 })
+        .toBuffer(),
+    );
   }
 
   if (frame) {

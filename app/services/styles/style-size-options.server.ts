@@ -28,12 +28,16 @@ const decimalPattern = /^\d+(?:\.\d{1,2})?$/;
 function validateInput(input: StyleSizeOptionInput) {
   const label = requiredText(input.label, "Size name");
 
+  // Above 100 upscales the original generated image on read (see
+  // media.style-assets.$assetId.ts) using high-quality interpolation —
+  // no extra generation cost, but very large upscales can look soft,
+  // hence the 400% (4x) ceiling rather than allowing anything.
   if (
     !Number.isInteger(input.scalePercent) ||
     input.scalePercent < 1 ||
-    input.scalePercent > 100
+    input.scalePercent > 400
   ) {
-    throw new Error("Scale must be between 1 and 100%.");
+    throw new Error("Scale must be between 1 and 400%.");
   }
 
   if (!decimalPattern.test(input.price)) {

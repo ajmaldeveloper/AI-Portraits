@@ -105,11 +105,11 @@ function SizeFormFields({
           onChange({ scalePercent: eventValue(event) })
         }
         min={1}
-        max={100}
+        max={400}
         step={1}
         suffix="%"
         autocomplete="off"
-        details="A rough guide: 100% ≈ Large, 80% ≈ Medium, 60% ≈ Small — just informative, use whatever fits your sizes."
+        details="A rough guide: 100% ≈ Large, 80% ≈ Medium, 60% ≈ Small. Above 100% upscales the generated image for bigger prints (up to 400%) — quality holds up well to about 200%, softer beyond that."
       />
 
       <s-query-container>
