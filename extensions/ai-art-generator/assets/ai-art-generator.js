@@ -106,8 +106,22 @@ class AiArtGenerator extends HTMLElement {
       // Shopify hides any property whose key starts with "_" from the
       // cart, checkout, and order confirmation — kept purely for
       // backend/fulfillment use (visible to the merchant in the order's
-      // admin view), not shown to the customer as a raw pasted URL.
+      // admin view).
       event.formData.set("properties[_ai_art_result_image]", resultImageUrl);
+
+      // Customer-visible twin, but as a short redirect link (no query
+      // string/signature) rather than the long signed URL directly —
+      // pasting that raw into the cart looked like a wall of text. The
+      // redirect target still serves with Content-Disposition:
+      // attachment, so this still downloads on click. Absolute (not a
+      // bare proxyRoot-relative path) so themes that only auto-linkify
+      // strings starting with http(s) still turn it into a real link.
+      if (this.generationId) {
+        event.formData.set(
+          "properties[See your artwork]",
+          `${window.location.origin}${this.proxyRoot}/artwork/${encodeURIComponent(this.generationId)}`,
+        );
+      }
 
       if (matchedSize) {
         event.formData.set("properties[Print size]", matchedSize.label);
