@@ -103,17 +103,11 @@ class AiArtGenerator extends HTMLElement {
         this.generationId || "",
       );
 
-      event.formData.set("properties[_ai_art_result_image]", resultImageUrl);
-
       // Shopify hides any property whose key starts with "_" from the
-      // cart, checkout, and order confirmation — the underscored one
-      // above stays purely for backend/fulfillment use. This visible
-      // twin is what actually lets the customer (and the merchant, in
-      // the order's line item) see/click through to the specific
-      // generated image tied to this cart line — its value is served
-      // with a Content-Disposition: attachment header, so clicking it
-      // downloads the file rather than just opening the raw URL.
-      event.formData.set("properties[See your artwork]", resultImageUrl);
+      // cart, checkout, and order confirmation — kept purely for
+      // backend/fulfillment use (visible to the merchant in the order's
+      // admin view), not shown to the customer as a raw pasted URL.
+      event.formData.set("properties[_ai_art_result_image]", resultImageUrl);
 
       if (matchedSize) {
         event.formData.set("properties[Print size]", matchedSize.label);
@@ -131,12 +125,9 @@ class AiArtGenerator extends HTMLElement {
         event.formData.set(`properties[${label}]`, value);
       }
 
-      if (this.submittedPersonalization) {
-        event.formData.set(
-          "properties[Personalization]",
-          this.submittedPersonalization,
-        );
-      }
+      // Personalization free-text is an instruction to the AI during
+      // generation only (e.g. "make the hair black") — not something a
+      // customer needs restated back to them as an order line item.
     });
 
     // Reacts to the theme's own native Size/Framing picker so the
