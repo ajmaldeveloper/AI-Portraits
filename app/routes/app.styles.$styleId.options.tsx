@@ -76,6 +76,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
           ? createSignedStyleAssetUrl(request.url, choice.frameImageAssetId, session.shop)
           : null,
         borderThicknessPx: choice.borderThicknessPx,
+        matThicknessPx: choice.matThicknessPx,
+        borderRadiusPx: choice.borderRadiusPx,
       })),
     })),
   };
@@ -169,6 +171,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         hexColor: formValue(formData, "hexColor") || null,
         frameImageAssetId,
         borderThicknessPx: numberValue(formData, "borderThicknessPx"),
+        matThicknessPx: numberValue(formData, "matThicknessPx"),
+        borderRadiusPx: numberValue(formData, "borderRadiusPx"),
       };
 
       if (intent === "addChoice") {

@@ -93,6 +93,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         frameColor: entry.frameColor,
         frameImageUrl: entry.frameImageUrl,
         borderThicknessPx: entry.borderThicknessPx,
+        matThicknessPx: entry.matThicknessPx,
+        borderRadiusPx: entry.borderRadiusPx,
       })),
 
       // Independent of Framing's own Shopify variants — any EXTRA

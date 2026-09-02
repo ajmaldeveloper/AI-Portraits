@@ -34,6 +34,8 @@ export type OptionChoiceView = {
   frameImageAssetId: string | null;
   frameImageUrl: string | null;
   borderThicknessPx: number | null;
+  matThicknessPx: number | null;
+  borderRadiusPx: number | null;
 };
 
 export type OptionView = {
@@ -360,6 +362,8 @@ type ChoiceFormState = {
   scalePercent: string;
   hexColor: string;
   borderThicknessPx: string;
+  matThicknessPx: string;
+  borderRadiusPx: string;
 };
 
 const blankChoiceValues: ChoiceFormState = {
@@ -370,6 +374,8 @@ const blankChoiceValues: ChoiceFormState = {
   scalePercent: "100",
   hexColor: "#1a1a1a",
   borderThicknessPx: "24",
+  matThicknessPx: "",
+  borderRadiusPx: "",
 };
 
 function choiceValuesOf(choice: OptionChoiceView): ChoiceFormState {
@@ -381,6 +387,11 @@ function choiceValuesOf(choice: OptionChoiceView): ChoiceFormState {
     scalePercent: choice.scalePercent ? String(choice.scalePercent) : "100",
     hexColor: choice.hexColor || "#1a1a1a",
     borderThicknessPx: choice.borderThicknessPx ? String(choice.borderThicknessPx) : "24",
+    matThicknessPx: choice.matThicknessPx ? String(choice.matThicknessPx) : "",
+    borderRadiusPx:
+      choice.borderRadiusPx !== null && choice.borderRadiusPx !== undefined
+        ? String(choice.borderRadiusPx)
+        : "",
   };
 }
 
@@ -437,6 +448,36 @@ function validateChoiceForm(
 
     if (!Number.isInteger(thickness) || thickness < 1) {
       errors.borderThicknessPx = "Frame thickness must be a positive whole number of pixels.";
+    }
+  }
+
+  // Thickness (for a COLOR_SWATCH choice), mat gap, and corner radius
+  // are all optional on the Framing axis — blank just means "use the
+  // storefront's own default look" — only the format is checked when
+  // something was actually entered.
+  if (option.axisRole === "FRAMING") {
+    if (option.type === "COLOR_SWATCH" && values.borderThicknessPx.trim()) {
+      const thickness = Number(values.borderThicknessPx);
+
+      if (!Number.isInteger(thickness) || thickness < 1) {
+        errors.borderThicknessPx = "Frame thickness must be a positive whole number of pixels.";
+      }
+    }
+
+    if (values.matThicknessPx.trim()) {
+      const mat = Number(values.matThicknessPx);
+
+      if (!Number.isInteger(mat) || mat < 1) {
+        errors.matThicknessPx = "Mat thickness must be a positive whole number of pixels.";
+      }
+    }
+
+    if (values.borderRadiusPx.trim()) {
+      const radius = Number(values.borderRadiusPx);
+
+      if (!Number.isInteger(radius) || radius < 0) {
+        errors.borderRadiusPx = "Corner radius must be a non-negative whole number of pixels.";
+      }
     }
   }
 
@@ -570,6 +611,53 @@ function ChoiceFormFields({
             error={errors.borderThicknessPx}
           />
         </s-stack>
+      ) : null}
+
+      {option.axisRole === "FRAMING" ? (
+        <s-query-container>
+          <s-grid gridTemplateColumns="@container (inline-size > 360px) 1fr 1fr, 1fr" gap="base">
+            {option.type === "COLOR_SWATCH" ? (
+              <s-number-field
+                label="Frame thickness (px)"
+                name="borderThicknessPx"
+                value={values.borderThicknessPx}
+                onInput={(event: Event) => onChange({ borderThicknessPx: eventValue(event) })}
+                min={1}
+                step={1}
+                suffix="px"
+                autocomplete="off"
+                error={errors.borderThicknessPx}
+                details="Leave empty for the default (26px)."
+              />
+            ) : null}
+
+            <s-number-field
+              label="Mat thickness (px)"
+              name="matThicknessPx"
+              value={values.matThicknessPx}
+              onInput={(event: Event) => onChange({ matThicknessPx: eventValue(event) })}
+              min={1}
+              step={1}
+              suffix="px"
+              autocomplete="off"
+              error={errors.matThicknessPx}
+              details="Leave empty for the default (18px)."
+            />
+
+            <s-number-field
+              label="Corner radius (px)"
+              name="borderRadiusPx"
+              value={values.borderRadiusPx}
+              onInput={(event: Event) => onChange({ borderRadiusPx: eventValue(event) })}
+              min={0}
+              step={1}
+              suffix="px"
+              autocomplete="off"
+              error={errors.borderRadiusPx}
+              details="0 = square corners (the default)."
+            />
+          </s-grid>
+        </s-query-container>
       ) : null}
     </s-stack>
   );

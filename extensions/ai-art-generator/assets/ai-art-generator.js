@@ -723,18 +723,31 @@ class AiArtGenerator extends HTMLElement {
     wrap.style.removeProperty("--aig-frame-color");
     wrap.style.removeProperty("--aig-frame-image");
     wrap.style.removeProperty("--aig-frame-thickness");
+    wrap.style.removeProperty("--aig-mat-thickness");
+    wrap.style.removeProperty("--aig-frame-radius");
     wrap.style.removeProperty("--aig-mat-color");
 
     if (!isFramed) {
       return;
     }
 
+    // Per-choice overrides of the CSS's own defaults — meaningful for
+    // either frame type (flat color or uploaded texture), null means
+    // "use the default."
+    if (matched.borderThicknessPx) {
+      wrap.style.setProperty("--aig-frame-thickness", `${matched.borderThicknessPx}px`);
+    }
+
+    if (matched.matThicknessPx) {
+      wrap.style.setProperty("--aig-mat-thickness", `${matched.matThicknessPx}px`);
+    }
+
+    if (matched.borderRadiusPx !== null && matched.borderRadiusPx !== undefined) {
+      wrap.style.setProperty("--aig-frame-radius", `${matched.borderRadiusPx}px`);
+    }
+
     if (matched.frameImageUrl) {
       wrap.style.setProperty("--aig-frame-image", `url("${matched.frameImageUrl}")`);
-      wrap.style.setProperty(
-        "--aig-frame-thickness",
-        `${matched.borderThicknessPx || 24}px`,
-      );
       wrap.classList.add("aig-framed-image");
 
       return;

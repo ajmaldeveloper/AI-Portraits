@@ -158,12 +158,17 @@ export type SizeVariantMapping = {
   // Framing axis at all, or a Framing choice with an uploaded image
   // instead of a flat color). Drives whether the storefront draws a
   // CSS border around the result image for whichever variant the
-  // customer currently has selected. frameImageUrl/borderThicknessPx
-  // are the IMAGE_SWATCH-type counterpart to frameColor — a Framing
-  // choice carries at most one of the two, never both.
+  // customer currently has selected. frameImageUrl is the
+  // IMAGE_SWATCH-type counterpart to frameColor — a Framing choice
+  // carries at most one of the two, never both. borderThicknessPx/
+  // matThicknessPx/borderRadiusPx are optional per-choice overrides of
+  // the storefront CSS's own defaults (null = use the default look),
+  // meaningful for either type.
   frameColor: string | null;
   frameImageUrl: string | null;
   borderThicknessPx: number | null;
+  matThicknessPx: number | null;
+  borderRadiusPx: number | null;
 };
 
 function numericIdFromGid(gid: string): string {
@@ -218,10 +223,13 @@ type AxisValue = {
   scalePercent: number | null;
   // At most one of frameColor/frameImageAssetId is ever non-null (a
   // Framing choice is COLOR_SWATCH or IMAGE_SWATCH type, never both) —
-  // and only for axisRole FRAMING.
+  // and only for axisRole FRAMING. borderThicknessPx/matThicknessPx/
+  // borderRadiusPx are likewise only ever set for axisRole FRAMING.
   frameColor: string | null;
   frameImageAssetId: string | null;
   borderThicknessPx: number | null;
+  matThicknessPx: number | null;
+  borderRadiusPx: number | null;
 };
 
 type VariantAxis = {
@@ -312,6 +320,10 @@ export function parseSizeVariants(productSettings: unknown): SizeVariantMapping[
         typeof entry.borderThicknessPx === "number"
           ? entry.borderThicknessPx
           : null,
+      matThicknessPx:
+        typeof entry.matThicknessPx === "number" ? entry.matThicknessPx : null,
+      borderRadiusPx:
+        typeof entry.borderRadiusPx === "number" ? entry.borderRadiusPx : null,
     }));
 }
 
@@ -366,7 +378,11 @@ async function upsertShopifyProduct(
         frameImageAssetId:
           option.type === "IMAGE_SWATCH" ? choice.frameImageAssetId : null,
         borderThicknessPx:
-          option.type === "IMAGE_SWATCH" ? choice.borderThicknessPx : null,
+          option.axisRole === "FRAMING" ? choice.borderThicknessPx : null,
+        matThicknessPx:
+          option.axisRole === "FRAMING" ? choice.matThicknessPx : null,
+        borderRadiusPx:
+          option.axisRole === "FRAMING" ? choice.borderRadiusPx : null,
       })),
     }));
 
@@ -759,6 +775,8 @@ async function upsertShopifyProduct(
               ? createSignedStyleAssetUrl(requestUrl, frameImageAssetId, style.shop)
               : null,
             borderThicknessPx: framingEntry?.value.borderThicknessPx ?? null,
+            matThicknessPx: framingEntry?.value.matThicknessPx ?? null,
+            borderRadiusPx: framingEntry?.value.borderRadiusPx ?? null,
           };
         })
         .filter((entry): entry is SizeVariantMapping => entry !== null)
@@ -779,6 +797,8 @@ async function upsertShopifyProduct(
             frameColor: null,
             frameImageUrl: null,
             borderThicknessPx: null,
+            matThicknessPx: null,
+            borderRadiusPx: null,
           },
         ];
       })();

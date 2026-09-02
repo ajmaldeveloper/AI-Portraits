@@ -35,6 +35,8 @@ export type StyleOptionChoiceInput = {
   hexColor: string | null;
   frameImageAssetId: string | null;
   borderThicknessPx: number | null;
+  matThicknessPx: number | null;
+  borderRadiusPx: number | null;
 };
 
 const decimalPattern = /^-?\d+(?:\.\d{1,2})?$/;
@@ -48,6 +50,34 @@ function requiredText(value: string, fieldName: string) {
   }
 
   return normalized;
+}
+
+// null/blank stays null (falls back to the storefront's own default);
+// anything else must be a real, positive whole pixel count.
+function normalizeOptionalPositiveInt(value: number | null, fieldName: string) {
+  if (value === null) {
+    return null;
+  }
+
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${fieldName} must be a positive whole number of pixels.`);
+  }
+
+  return value;
+}
+
+// Same, but 0 is valid (a corner radius of 0 is a real, meaningful
+// choice — square corners — not "unset").
+function normalizeOptionalNonNegativeInt(value: number | null, fieldName: string) {
+  if (value === null) {
+    return null;
+  }
+
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${fieldName} must be a non-negative whole number of pixels.`);
+  }
+
+  return value;
 }
 
 async function requireEditableStyle(shop: string, styleId: string) {
@@ -330,8 +360,9 @@ async function validateChoiceInput(
     hexColor = value || null;
   }
 
-  // Uploaded texture + thickness only mean anything for an
-  // IMAGE_SWATCH-type option.
+  // Uploaded texture only means anything for an IMAGE_SWATCH-type
+  // option — required there (a texture with no thickness set makes no
+  // sense to render).
   let frameImageAssetId: string | null = null;
   let borderThicknessPx: number | null = null;
 
@@ -360,6 +391,34 @@ async function validateChoiceInput(
     borderThicknessPx = thickness;
   }
 
+  // Frame thickness (for a COLOR_SWATCH choice — an IMAGE_SWATCH
+  // choice's is already required above), mat gap width, and corner
+  // radius only ever mean anything on the one Framing axis, and are
+  // always optional — null falls back to the storefront CSS's own
+  // default look, so a merchant only sets these when they want to
+  // override it.
+  let matThicknessPx: number | null = null;
+  let borderRadiusPx: number | null = null;
+
+  if (option.axisRole === "FRAMING") {
+    if (option.type === "COLOR_SWATCH") {
+      borderThicknessPx = normalizeOptionalPositiveInt(
+        input.borderThicknessPx,
+        "Frame thickness",
+      );
+    }
+
+    matThicknessPx = normalizeOptionalPositiveInt(
+      input.matThicknessPx,
+      "Mat thickness",
+    );
+
+    borderRadiusPx = normalizeOptionalNonNegativeInt(
+      input.borderRadiusPx,
+      "Corner radius",
+    );
+  }
+
   return {
     label,
     priceDelta,
@@ -369,6 +428,8 @@ async function validateChoiceInput(
     hexColor,
     frameImageAssetId,
     borderThicknessPx,
+    matThicknessPx,
+    borderRadiusPx,
   };
 }
 
@@ -453,6 +514,8 @@ export async function createStyleOptionChoice(
       hexColor: normalized.hexColor,
       frameImageAssetId: normalized.frameImageAssetId,
       borderThicknessPx: normalized.borderThicknessPx,
+      matThicknessPx: normalized.matThicknessPx,
+      borderRadiusPx: normalized.borderRadiusPx,
       position: (lastChoice?.position ?? -1) + 1,
     },
   });
@@ -495,6 +558,8 @@ export async function updateStyleOptionChoice(
       hexColor: normalized.hexColor,
       frameImageAssetId: normalized.frameImageAssetId,
       borderThicknessPx: normalized.borderThicknessPx,
+      matThicknessPx: normalized.matThicknessPx,
+      borderRadiusPx: normalized.borderRadiusPx,
     },
   });
 

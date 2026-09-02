@@ -345,8 +345,16 @@ model StyleOptionChoice {
   scalePercent        Int?
   hexColor            String?
   frameImageAssetId   String?
-  borderThicknessPx   Int?
-  position            Int      @default(0)
+  // The three below are meaningful only for a choice under the one
+  // axisRole FRAMING option — regardless of COLOR_SWATCH vs
+  // IMAGE_SWATCH type (both get a real frame border; only the border
+  // fill differs). All optional — null falls back to the storefront
+  // CSS's own defaults, so setting these is opt-in per choice, not
+  // required.
+  borderThicknessPx Int?
+  matThicknessPx    Int?
+  borderRadiusPx    Int?
+  position          Int @default(0)
 
   option          StyleOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
   frameImageAsset StyleAsset? @relation(fields: [frameImageAssetId], references: [id], onDelete: SetNull)
