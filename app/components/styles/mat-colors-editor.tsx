@@ -452,13 +452,6 @@ export function MatColorsEditor({
   return (
     <s-section heading="Mat colors">
       <s-stack direction="block" gap="base">
-        <s-text color="subdued">
-          Shown as swatches on the storefront, independent of Framing —
-          customers pick a mat color for the inner border regardless of
-          which Framing option they chose. Purely visual and
-          price-neutral; never sent to Shopify.
-        </s-text>
-
         {matColors.length === 0 ? (
           <s-text color="subdued">No mat colors yet.</s-text>
         ) : (
