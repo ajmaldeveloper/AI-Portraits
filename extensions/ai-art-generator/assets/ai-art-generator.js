@@ -33,13 +33,6 @@ class AiArtGenerator extends HTMLElement {
     this.submittedPersonalization = "";
     this.generationId = null;
     this.generationResultUrl = null;
-
-    // { [sizeLabel]: signedUrl } — same generated image, one signed URL
-    // per configured print size (the largest is the untouched original;
-    // smaller ones are resized on read). Matched against whichever
-    // variant the theme's native size picker has selected at
-    // add-to-cart time.
-    this.resultUrls = {};
   }
 
   connectedCallback() {
@@ -98,28 +91,24 @@ class AiArtGenerator extends HTMLElement {
         (option) => option.variantId === selectedVariantId,
       );
 
-      const resultImageUrl =
-        (matchedSize && this.resultUrls[matchedSize.label]) ||
-        this.generationResultUrl;
-
+      // Shopify hides any property whose key starts with "_" from the
+      // cart, checkout, and order confirmation — kept purely for
+      // backend/fulfillment use (visible to the merchant in the order's
+      // admin view, alongside the one link below — no need for a
+      // second, redundant one).
       event.formData.set(
         "properties[_ai_art_generation_id]",
         this.generationId || "",
       );
 
-      // Shopify hides any property whose key starts with "_" from the
-      // cart, checkout, and order confirmation — kept purely for
-      // backend/fulfillment use (visible to the merchant in the order's
-      // admin view).
-      event.formData.set("properties[_ai_art_result_image]", resultImageUrl);
-
-      // Customer-visible: a readable label as the property's key (all
-      // Shopify actually lets a property show — there's no way to give
-      // it link text separate from its value) with the short redirect
-      // link (no query string/signature) as the value, so it reads as
-      // "Preview my portrait: <short link>" rather than a wall of raw
-      // URL text. The link itself still downloads on click
-      // (Content-Disposition: attachment on the redirect target).
+      // The one customer- and merchant-visible artwork link: a
+      // readable label as the property's key (all Shopify actually
+      // lets a property show — there's no way to give it link text
+      // separate from its value) with the short redirect link (no
+      // query string/signature) as the value, so it reads as "Preview
+      // my portrait: <short link>" rather than a wall of raw URL text.
+      // The link itself still downloads on click (Content-Disposition:
+      // attachment on the redirect target).
       if (this.generationId) {
         event.formData.set(
           "properties[Preview my portrait]",
@@ -511,7 +500,6 @@ class AiArtGenerator extends HTMLElement {
         if (payload.status === "SUCCEEDED" && payload.resultUrl) {
           this.generationId = generationId;
           this.generationResultUrl = payload.resultUrl;
-          this.resultUrls = payload.resultUrls || {};
 
           this.renderResult(payload.resultUrl);
 
