@@ -61,7 +61,7 @@ export const AI_PROVIDERS: AIProviderDefinition[] = [
       },
       {
         id: "gemini-2.5-flash-image",
-        label: "Gemini 2.5 Flash Image (legacy)",
+        label: "Gemini 2.5 Flash Image (Nano Banana, legacy)",
       },
     ],
   },
