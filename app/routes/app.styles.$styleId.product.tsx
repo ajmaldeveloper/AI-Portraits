@@ -13,6 +13,13 @@ import {
   updateStyleFramingOption,
 } from "../services/styles/style-framing-options.server";
 import {
+  createStyleMatColor,
+  deleteStyleMatColor,
+  reorderStyleMatColors,
+  type StyleMatColorInput,
+  updateStyleMatColor,
+} from "../services/styles/style-mat-colors.server";
+import {
   createStyleSizeOption,
   deleteStyleSizeOption,
   reorderStyleSizeOptions,
@@ -237,6 +244,12 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       requiresShipping: option.requiresShipping,
       frameColor: option.frameColor ?? "",
     })),
+
+    matColors: style.matColors.map((color) => ({
+      id: color.id,
+      label: color.label,
+      hexColor: color.hexColor,
+    })),
   };
 };
 
@@ -356,6 +369,52 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       );
     }
 
+    if (intent === "addMatColor" || intent === "editMatColor") {
+      const input: StyleMatColorInput = {
+        label: formValue(formData, "label"),
+        hexColor: formValue(formData, "hexColor"),
+      };
+
+      if (intent === "addMatColor") {
+        await createStyleMatColor(session.shop, styleId, input);
+      } else {
+        const matColorId = formValue(formData, "matColorId");
+
+        await updateStyleMatColor(session.shop, styleId, matColorId, input);
+      }
+
+      return redirect(`/app/styles/${styleId}/product?notice=mat-color-saved`);
+    }
+
+    if (intent === "deleteMatColor") {
+      const matColorId = formValue(formData, "matColorId");
+
+      await deleteStyleMatColor(session.shop, styleId, matColorId);
+
+      return redirect(
+        `/app/styles/${styleId}/product?notice=mat-color-deleted`,
+      );
+    }
+
+    if (intent === "reorderMatColors") {
+      const orderedMatColorIds = formData
+        .getAll("matColorId")
+        .filter(
+          (value): value is string =>
+            typeof value === "string" && value.length > 0,
+        );
+
+      if (orderedMatColorIds.length === 0) {
+        throw new Error("Mat color order is required.");
+      }
+
+      await reorderStyleMatColors(session.shop, styleId, orderedMatColorIds);
+
+      return redirect(
+        `/app/styles/${styleId}/product?notice=mat-colors-reordered`,
+      );
+    }
+
     const productTitle = formValue(formData, "productTitle");
 
     const productDescription = formValue(formData, "productDescription");
@@ -416,6 +475,9 @@ const notices: Record<string, string> = {
   "framing-saved": "Framing option saved",
   "framing-deleted": "Framing option deleted",
   "framing-reordered": "Framing options reordered",
+  "mat-color-saved": "Mat color saved",
+  "mat-color-deleted": "Mat color deleted",
+  "mat-colors-reordered": "Mat colors reordered",
 };
 
 export default function StyleProduct() {
@@ -514,6 +576,7 @@ export default function StyleProduct() {
         collections={data.collections}
         sizeOptions={data.sizeOptions}
         framingOptions={data.framingOptions}
+        matColors={data.matColors}
         editable={data.editable}
       />
 

@@ -4,6 +4,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 
 import { eventValue } from "../../utils/event-value";
 import { FramingOptionsEditor, type FramingOptionView } from "./framing-options-editor";
+import { MatColorsEditor, type MatColorView } from "./mat-colors-editor";
 import { SizeOptionsEditor, type SizeOptionView } from "./size-options-editor";
 
 export type CollectionSummary = {
@@ -21,6 +22,7 @@ type ProductConfigurationProps = {
   collections: CollectionSummary[];
   sizeOptions: SizeOptionView[];
   framingOptions: FramingOptionView[];
+  matColors: MatColorView[];
   editable: boolean;
 };
 
@@ -33,6 +35,7 @@ export function ProductConfiguration({
   collections: initialCollections,
   sizeOptions,
   framingOptions,
+  matColors,
   editable,
 }: ProductConfigurationProps) {
   const shopify = useAppBridge();
@@ -221,6 +224,8 @@ export function ProductConfiguration({
         framingOptions={framingOptions}
         editable={editable}
       />
+
+      <MatColorsEditor matColors={matColors} editable={editable} />
 
       <s-section heading="Product tags">
         <s-stack direction="block" gap="base">

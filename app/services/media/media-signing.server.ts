@@ -12,20 +12,24 @@ function signingSecret() {
   return secret;
 }
 
-// scale (and, when requested, frame) are folded into the signed
+// scale (and, when requested, frame/mat) are folded into the signed
 // message so a URL signed for one can't be replayed to request a
 // different one — see media.style-assets.$assetId.ts, which resizes
-// on read when scale < 100 and composites a mat + frame border onto
-// the image when frame is present. frame is a bare 6-digit hex (no
-// "#" — kept out of the message/URL punctuation) or "" for none.
+// on read when scale != 100 and composites a mat + frame border onto
+// the image when frame is present (mat only ever applies alongside a
+// frame). frame/mat are each a bare 6-digit hex (no "#" — kept out of
+// the message/URL punctuation) or "" for none.
 function message(
   assetId: string,
   shop: string,
   expires: number,
   scale: number,
   frame: string,
+  mat: string,
 ) {
-  return [assetId, shop, String(expires), String(scale), frame].join("\n");
+  return [assetId, shop, String(expires), String(scale), frame, mat].join(
+    "\n",
+  );
 }
 
 function signature(
@@ -34,9 +38,10 @@ function signature(
   expires: number,
   scale: number,
   frame: string,
+  mat: string,
 ) {
   return createHmac("sha256", signingSecret())
-    .update(message(assetId, shop, expires, scale, frame))
+    .update(message(assetId, shop, expires, scale, frame, mat))
     .digest("hex");
 }
 
@@ -47,6 +52,7 @@ export function createSignedStyleAssetUrl(
   ttlSeconds = 60 * 60 * 6,
   scalePercent = 100,
   frameColor?: string | null,
+  matColor?: string | null,
 ) {
   const expires = Math.floor(Date.now() / 1000) + ttlSeconds;
 
@@ -59,6 +65,8 @@ export function createSignedStyleAssetUrl(
 
   const frame = frameColor?.replace(/^#/, "").toLowerCase() ?? "";
 
+  const mat = matColor?.replace(/^#/, "").toLowerCase() ?? "";
+
   url.searchParams.set("shop", shop);
 
   url.searchParams.set("expires", String(expires));
@@ -69,9 +77,13 @@ export function createSignedStyleAssetUrl(
     url.searchParams.set("frame", frame);
   }
 
+  if (mat) {
+    url.searchParams.set("mat", mat);
+  }
+
   url.searchParams.set(
     "signature",
-    signature(assetId, shop, expires, scalePercent, frame),
+    signature(assetId, shop, expires, scalePercent, frame, mat),
   );
 
   return url.toString();
@@ -83,6 +95,7 @@ export function verifySignedStyleAssetRequest(input: {
   expires: number;
   scale: number;
   frame: string;
+  mat: string;
   signature: string;
 }) {
   if (!Number.isInteger(input.expires)) {
@@ -110,6 +123,10 @@ export function verifySignedStyleAssetRequest(input: {
     return false;
   }
 
+  if (input.mat && !/^[0-9a-f]{6}$/i.test(input.mat)) {
+    return false;
+  }
+
   if (!/^[a-f0-9]{64}$/i.test(input.signature)) {
     return false;
   }
@@ -120,6 +137,7 @@ export function verifySignedStyleAssetRequest(input: {
     input.expires,
     input.scale,
     input.frame.toLowerCase(),
+    input.mat.toLowerCase(),
   );
 
   const suppliedBuffer = Buffer.from(input.signature, "hex");

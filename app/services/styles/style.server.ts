@@ -208,6 +208,12 @@ export async function getStyleForShop(shop: string, styleId: string) {
         },
       },
 
+      matColors: {
+        orderBy: {
+          position: "asc",
+        },
+      },
+
       assets: {
         orderBy: {
           position: "asc",

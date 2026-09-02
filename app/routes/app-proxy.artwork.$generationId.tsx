@@ -31,17 +31,24 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     return new Response("Artwork not found.", { status: 404 });
   }
 
-  // Optional — set by the storefront JS from the Framing option that
-  // was actually selected at add-to-cart time, so the linked image
-  // matches what was ordered (a mat + solid frame border composited
-  // on read, not baked into the stored asset — see
+  // Optional — set by the storefront JS from the Framing option (and,
+  // independently, mat color) actually selected at add-to-cart time,
+  // so the linked image matches what was ordered (a mat + solid frame
+  // border composited on read, not baked into the stored asset — see
   // media.style-assets.$assetId.ts). Only ever changes what this one
   // link's own copy looks like, never the order's real Framing
   // variant/price, so it's fine for the client to specify directly.
-  const frameParam = new URL(request.url).searchParams.get("frame");
+  const searchParams = new URL(request.url).searchParams;
 
-  const frame =
-    frameParam && /^[0-9a-f]{6}$/i.test(frameParam) ? frameParam : null;
+  const hexParam = (name: string) => {
+    const value = searchParams.get(name);
+
+    return value && /^[0-9a-f]{6}$/i.test(value) ? value : null;
+  };
+
+  const frame = hexParam("frame");
+
+  const mat = hexParam("mat");
 
   const signedUrl = createSignedStyleAssetUrl(
     request.url,
@@ -50,6 +57,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     undefined,
     100,
     frame,
+    mat,
   );
 
   return new Response(null, {

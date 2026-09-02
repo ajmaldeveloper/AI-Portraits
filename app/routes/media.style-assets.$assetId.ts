@@ -19,9 +19,14 @@ function hexToRgb(hex: string) {
   };
 }
 
+// Default off-white mat when the customer picked a Framing option but
+// no mat color (or the merchant hasn't configured any mat colors).
+const DEFAULT_MAT_RGB = { r: 250, g: 248, b: 244 };
+
 async function applyFrame(
   pipeline: ReturnType<typeof sharp>,
   frameHex: string,
+  matHex: string,
 ) {
   const metadata = await pipeline.metadata();
 
@@ -41,7 +46,7 @@ async function applyFrame(
       bottom: matThickness,
       left: matThickness,
       right: matThickness,
-      background: { r: 250, g: 248, b: 244 },
+      background: matHex ? hexToRgb(matHex) : DEFAULT_MAT_RGB,
     })
     .toBuffer();
 
@@ -73,6 +78,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   const frame = url.searchParams.get("frame") ?? "";
 
+  const mat = url.searchParams.get("mat") ?? "";
+
   const signature = url.searchParams.get("signature");
 
   if (!shop || !expiresRaw || !signature) {
@@ -94,6 +101,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     expires,
     scale,
     frame,
+    mat,
     signature,
   });
 
@@ -174,7 +182,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   }
 
   if (frame) {
-    pipeline = await applyFrame(pipeline, frame);
+    pipeline = await applyFrame(pipeline, frame, mat);
   }
 
   const output = await pipeline.toBuffer();

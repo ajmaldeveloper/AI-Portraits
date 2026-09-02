@@ -116,6 +116,7 @@ model Style {
   generations    Generation[]
   sizeOptions    StyleSizeOption[]
   framingOptions StyleFramingOption[]
+  matColors      StyleMatColor[]
 
   @@index([shop, status])
   @@index([shop, createdAt])
@@ -314,6 +315,31 @@ model StyleFramingOption {
   requiresShipping    Boolean
   frameColor          String?
   position            Int      @default(0)
+
+  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([styleId, label])
+  @@index([styleId, position])
+}
+
+// Reusable, merchant-managed list of mat colors, edited on the Product
+// tab the same way Sizes/Framing are. Purely app-owned visual data —
+// never sent to Shopify, and price-neutral (unlike Framing, picking a
+// mat color never changes price/shipping) — selected independently by
+// the customer on the storefront and rendered as an inner colored ring
+// between the frame border and the photo, only when the customer's
+// selected Framing variant is actually framed (has its own frameColor).
+model StyleMatColor {
+  id String @id @default(cuid())
+
+  styleId String
+
+  label    String
+  hexColor String
+  position Int    @default(0)
 
   style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
 

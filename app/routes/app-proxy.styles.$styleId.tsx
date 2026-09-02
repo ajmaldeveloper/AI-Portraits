@@ -90,6 +90,15 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         scalePercent: entry.scalePercent,
         frameColor: entry.frameColor,
       })),
+
+      // Independent of Framing's own Shopify variants — any mat color
+      // combines with any Framing choice — so these come straight from
+      // the Style's own relation, not the publish-time sizeVariants
+      // mapping, and stay current even before a republish.
+      matColors: style.matColors.map((color) => ({
+        label: color.label,
+        hexColor: color.hexColor,
+      })),
     },
     {
       headers: {
