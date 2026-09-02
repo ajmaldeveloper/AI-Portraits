@@ -350,7 +350,7 @@ textarea.aig-control {
 .aig-mat-picker {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -358,19 +358,25 @@ textarea.aig-control {
 .aig-extra-option-group {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+  width: 100%;
 }
 
+/* Matches the theme's own native option labels (e.g. "Size",
+   "Framing") rather than the smaller, muted caption this used to be —
+   same left alignment, similar weight/size, so this option doesn't
+   read as visually distinct from the ones above it. */
 .aig-mat-picker-label {
-  font-size: 13px;
-  color: var(--aig-muted);
+  font-size: 1em;
+  font-weight: 600;
+  color: var(--aig-text);
 }
 
 .aig-swatch-group {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
 }
 
