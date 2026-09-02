@@ -110,12 +110,22 @@ class AiArtGenerator extends HTMLElement {
       // Shopify hides any property whose key starts with "_" from the
       // cart, checkout, and order confirmation — kept purely for
       // backend/fulfillment use (visible to the merchant in the order's
-      // admin view, e.g. via /apps/ai-art-studio/artwork/<generationId>
-      // for a short link). Not shown to the customer in cart/checkout —
-      // Shopify has no way to give a property custom link text separate
-      // from its value, so any visible version reads as a raw pasted
-      // URL no matter how short it is.
+      // admin view).
       event.formData.set("properties[_ai_art_result_image]", resultImageUrl);
+
+      // Customer-visible: a readable label as the property's key (all
+      // Shopify actually lets a property show — there's no way to give
+      // it link text separate from its value) with the short redirect
+      // link (no query string/signature) as the value, so it reads as
+      // "Preview my portrait: <short link>" rather than a wall of raw
+      // URL text. The link itself still downloads on click
+      // (Content-Disposition: attachment on the redirect target).
+      if (this.generationId) {
+        event.formData.set(
+          "properties[Preview my portrait]",
+          `${window.location.origin}${this.proxyRoot}/artwork/${encodeURIComponent(this.generationId)}`,
+        );
+      }
 
       if (matchedSize) {
         event.formData.set("properties[Print size]", matchedSize.label);
