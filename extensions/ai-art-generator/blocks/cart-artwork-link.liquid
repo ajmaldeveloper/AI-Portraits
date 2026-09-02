@@ -1,0 +1,24 @@
+{%- comment -%}
+  Global app embed (target: body) — runs on every page, not just the
+  product page this app's personalization form renders on. This is
+  what makes it work across the cart drawer, the /cart page, and any
+  theme, without editing that theme's own templates: Shopify gives a
+  cart line item property no way to show custom link text separate
+  from its value, so instead of trying to control what the theme
+  prints, this script finds this app's own short artwork preview URL
+  (/apps/<subpath>/artwork/<id>, wherever it ends up in the page) and
+  replaces just that text with a clean "Image" link. Needs no extra
+  scopes and survives a theme change, unlike editing a specific
+  theme's cart-drawer.liquid would.
+{%- endcomment -%}
+{%- unless request.design_mode -%}
+  <script src="{{ 'cart-artwork-link.js' | asset_url }}" defer></script>
+{%- endunless -%}
+
+{% schema %}
+{
+  "name": "AI art cart link preview",
+  "target": "body",
+  "settings": []
+}
+{% endschema %}
