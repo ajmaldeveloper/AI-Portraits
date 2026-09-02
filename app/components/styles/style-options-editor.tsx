@@ -13,14 +13,14 @@ export const OPTION_TYPES = [
 ] as const;
 
 export const OPTION_ROLES = [
-  { value: "VARIANT", label: "Variant (priced, becomes a real Shopify variant)" },
-  { value: "EXTRA", label: "Extra (price-neutral, app-only)" },
+  { value: "VARIANT", label: "Variant" },
+  { value: "EXTRA", label: "Extra option" },
 ] as const;
 
 export const AXIS_ROLES = [
-  { value: "", label: "Plain — just an extra priced axis" },
-  { value: "SIZE", label: "Size — drives image resolution" },
-  { value: "FRAMING", label: "Framing — can ship physically / carry a frame" },
+  { value: "", label: "None" },
+  { value: "SIZE", label: "Size" },
+  { value: "FRAMING", label: "Framing" },
 ] as const;
 
 export type OptionChoiceView = {

@@ -109,15 +109,21 @@ export default function StyleWorkspace() {
   const navVariant = (section: string) =>
     active === section ? "secondary" : "tertiary";
 
-  const readyCount = readiness.filter((item) => item.complete).length;
-
-  const readinessTone = readyCount >= readiness.length ? "success" : "neutral";
-
   return (
     <s-page heading={style.name}>
       <s-link slot="breadcrumb-actions" href="/app/styles">
         Prompts
       </s-link>
+
+      <s-button
+        slot="secondary-actions"
+        variant="tertiary"
+        icon="export"
+        href={`${base}/export`}
+        target="_blank"
+      >
+        Export
+      </s-button>
 
       <s-stack direction="block" gap="base">
         <s-box
@@ -182,19 +188,6 @@ export default function StyleWorkspace() {
 
             <s-stack direction="inline" gap="base" alignItems="center">
               <StyleStatusBadge status={style.status} />
-
-              <s-badge tone={readinessTone}>
-                {readyCount} / {readiness.length} ready
-              </s-badge>
-
-              <s-button
-                variant="tertiary"
-                icon="export"
-                href={`${base}/export`}
-                target="_blank"
-              >
-                Export
-              </s-button>
 
               {style.canDelete ? (
                 <s-button
