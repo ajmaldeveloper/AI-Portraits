@@ -55,6 +55,10 @@ class AiArtGenerator extends HTMLElement {
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
     }
+
+    if (this.frameSyncTimer) {
+      clearInterval(this.frameSyncTimer);
+    }
   }
 
   // Hooks the theme's own native "Add to cart" form directly — same
@@ -106,22 +110,12 @@ class AiArtGenerator extends HTMLElement {
       // Shopify hides any property whose key starts with "_" from the
       // cart, checkout, and order confirmation — kept purely for
       // backend/fulfillment use (visible to the merchant in the order's
-      // admin view).
+      // admin view, e.g. via /apps/ai-art-studio/artwork/<generationId>
+      // for a short link). Not shown to the customer in cart/checkout —
+      // Shopify has no way to give a property custom link text separate
+      // from its value, so any visible version reads as a raw pasted
+      // URL no matter how short it is.
       event.formData.set("properties[_ai_art_result_image]", resultImageUrl);
-
-      // Customer-visible twin, but as a short redirect link (no query
-      // string/signature) rather than the long signed URL directly —
-      // pasting that raw into the cart looked like a wall of text. The
-      // redirect target still serves with Content-Disposition:
-      // attachment, so this still downloads on click. Absolute (not a
-      // bare proxyRoot-relative path) so themes that only auto-linkify
-      // strings starting with http(s) still turn it into a real link.
-      if (this.generationId) {
-        event.formData.set(
-          "properties[See your artwork]",
-          `${window.location.origin}${this.proxyRoot}/artwork/${encodeURIComponent(this.generationId)}`,
-        );
-      }
 
       if (matchedSize) {
         event.formData.set("properties[Print size]", matchedSize.label);
@@ -154,6 +148,30 @@ class AiArtGenerator extends HTMLElement {
         this.updateFramePreview();
       }
     });
+
+    // Belt-and-suspenders for themes whose custom variant-picker
+    // buttons (as opposed to a native <select>) update the hidden "id"
+    // field's value without dispatching a real "change" event — a
+    // cheap poll while a result exists, only acting when the selected
+    // variant actually changed, so it's correct regardless of how any
+    // given theme's picker is implemented.
+    this.lastSyncedVariantId = null;
+
+    this.frameSyncTimer = setInterval(() => {
+      if (!this.querySelector(".aig-frame-wrap")) {
+        return;
+      }
+
+      const currentVariantId = getSelectedVariantId(form);
+
+      if (currentVariantId === this.lastSyncedVariantId) {
+        return;
+      }
+
+      this.lastSyncedVariantId = currentVariantId;
+
+      this.updateFramePreview();
+    }, 400);
   }
 
   // A required image field means the whole product is "upload a photo,
