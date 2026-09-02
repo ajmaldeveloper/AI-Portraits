@@ -133,30 +133,37 @@ const PRODUCT_SET_MUTATION = `#graphql
 `;
 
 // Persisted in Style.productSettings.sizeVariants — one entry per
-// actual Shopify variant (not per Size option, since a size can now
-// correspond to several variants, one per Framing choice). compositeKey
-// joins every active axis's option id in a fixed order
-// (`${sizeOptionId ?? "none"}::${framingOptionId ?? "none"}`), not
-// label text — so renaming a size or framing option later renames the
-// existing Shopify variant on next republish instead of deleting and
-// recreating it (which would break any cart/checkout already holding
-// the old variant id). label/scalePercent always come from the Size
-// axis only (or "Default Title"/100 when there's no Size axis) — never
-// the Framing axis — since that's the one contract the storefront
-// depends on: which resolution to serve for whichever variant was
-// picked. Framing never affects image resolution.
+// actual Shopify variant (not per Size choice, since a size can now
+// correspond to several variants, one per value on every other active
+// VARIANT-role axis). compositeKey joins every active axis's *option*
+// id with the specific *choice* id picked on it
+// (`${optionId}:${choiceId}::${optionId}:${choiceId}...`), not label
+// text — so renaming an option or a choice later renames the existing
+// Shopify variant on next republish instead of deleting and recreating
+// it (which would break any cart/checkout already holding the old
+// variant id). label/scalePercent always come from whichever axis has
+// axisRole "SIZE" (or "Default Title"/100 when there's no such axis)
+// — never any other axis — since that's the one contract the
+// storefront depends on: which resolution to serve for whichever
+// variant was picked. Only the axisRole "FRAMING" axis ever sets
+// requiresShipping/a visual frame — every other axis is just price.
 export type SizeVariantMapping = {
   compositeKey: string;
   variantId: string;
   numericVariantId: string;
   label: string;
   scalePercent: number;
-  // The Framing axis value's own frameColor, if any — null means no
-  // visual frame for this variant (e.g. a "No Frame" choice, or a style
-  // with no Framing axis at all). Drives whether the storefront draws a
+  // The Framing axis value's own visual frame, if any — null means no
+  // visual frame for this variant (e.g. a "No Frame" choice, no
+  // Framing axis at all, or a Framing choice with an uploaded image
+  // instead of a flat color). Drives whether the storefront draws a
   // CSS border around the result image for whichever variant the
-  // customer currently has selected.
+  // customer currently has selected. frameImageUrl/borderThicknessPx
+  // are the IMAGE_SWATCH-type counterpart to frameColor — a Framing
+  // choice carries at most one of the two, never both.
   frameColor: string | null;
+  frameImageUrl: string | null;
+  borderThicknessPx: number | null;
 };
 
 function numericIdFromGid(gid: string): string {
@@ -189,58 +196,81 @@ function extractStaleVariantIds(errors: { message: string }[]): Set<string> {
   return ids;
 }
 
-// One independent variant axis (Size or Framing). A combination is one
-// value chosen from each currently-active axis; the cartesian product
-// of all active axes' values is the full variant matrix Shopify needs.
+// One independent variant axis — every role: VARIANT StyleOption on
+// the style. A combination is one value (StyleOptionChoice) chosen
+// from each currently-active axis; the cartesian product of all active
+// axes' values is the full variant matrix Shopify needs. Generalized
+// from the original hardcoded exactly-Size-then-Framing shape to an
+// arbitrary N axes, keyed off each option's axisRole rather than a
+// literal "Size"/"Framing" name match.
 type AxisValue = {
-  optionId: string;
+  choiceId: string;
   label: string;
   priceContribution: number;
-  // null = this option didn't set its own discount — combination logic
+  // null = this choice didn't set its own discount — combination logic
   // falls back to its priceContribution (no discount from this axis),
   // never to 0.
   compareAtContribution: number | null;
-  // null = this axis never sets shipping (only Framing does).
+  // null = this axis never sets shipping (only axisRole FRAMING does).
   requiresShipping: boolean | null;
-  // null = this axis never affects image resolution (only Size does).
+  // null = this axis never affects image resolution (only axisRole
+  // SIZE does).
   scalePercent: number | null;
-  // null = this axis never carries a visual frame color (only Framing
-  // does, and even then only when the merchant set one).
+  // At most one of frameColor/frameImageAssetId is ever non-null (a
+  // Framing choice is COLOR_SWATCH or IMAGE_SWATCH type, never both) —
+  // and only for axisRole FRAMING.
   frameColor: string | null;
+  frameImageAssetId: string | null;
+  borderThicknessPx: number | null;
 };
 
 type VariantAxis = {
-  name: string;
+  // StyleOption.id — stable, used for compositeKey (independent of the
+  // merchant-editable label below).
+  optionId: string;
+  // StyleOption.label — sent to Shopify as this axis's productOptions
+  // name and each variant's optionValues[].optionName.
+  displayName: string;
+  axisRole: "SIZE" | "FRAMING" | null;
   values: AxisValue[];
 };
 
 function cartesianProduct(
   axes: VariantAxis[],
-): Array<Array<{ axisName: string; value: AxisValue }>> {
-  return axes.reduce<Array<Array<{ axisName: string; value: AxisValue }>>>(
+): Array<Array<{ axis: VariantAxis; value: AxisValue }>> {
+  return axes.reduce<Array<Array<{ axis: VariantAxis; value: AxisValue }>>>(
     (combinations, axis) =>
       combinations.flatMap((combination) =>
-        axis.values.map((value) => [
-          ...combination,
-          { axisName: axis.name, value },
-        ]),
+        axis.values.map((value) => [...combination, { axis, value }]),
       ),
     [[]],
   );
 }
 
 function compositeKeyFor(
-  combination: Array<{ axisName: string; value: AxisValue }>,
+  combination: Array<{ axis: VariantAxis; value: AxisValue }>,
 ): string {
-  const sizeId =
-    combination.find((entry) => entry.axisName === "Size")?.value.optionId ??
-    "none";
+  if (combination.length === 0) {
+    return "none";
+  }
 
-  const framingId =
-    combination.find((entry) => entry.axisName === "Framing")?.value
-      .optionId ?? "none";
+  return combination
+    .map((entry) => `${entry.axis.optionId}:${entry.value.choiceId}`)
+    .join("::");
+}
 
-  return `${sizeId}::${framingId}`;
+function sizeEntryOf(
+  combination: Array<{ axis: VariantAxis; value: AxisValue }>,
+) {
+  return combination.find((entry) => entry.axis.axisRole === "SIZE") ?? null;
+}
+
+function framingEntryOf(
+  combination: Array<{ axis: VariantAxis; value: AxisValue }>,
+) {
+  return (
+    combination.find((entry) => entry.axis.axisRole === "FRAMING") ?? null
+  );
 }
 
 /**
@@ -269,12 +299,19 @@ export function parseSizeVariants(productSettings: unknown): SizeVariantMapping[
         typeof (entry as SizeVariantMapping).label === "string" &&
         typeof (entry as SizeVariantMapping).scalePercent === "number",
     )
-    // Entries persisted by a publish before this field existed simply
-    // won't have it — normalized to null rather than left undefined.
+    // Entries persisted by a publish before these fields existed
+    // simply won't have them — normalized to null rather than left
+    // undefined.
     .map((entry) => ({
       ...entry,
       frameColor:
         typeof entry.frameColor === "string" ? entry.frameColor : null,
+      frameImageUrl:
+        typeof entry.frameImageUrl === "string" ? entry.frameImageUrl : null,
+      borderThicknessPx:
+        typeof entry.borderThicknessPx === "number"
+          ? entry.borderThicknessPx
+          : null,
     }));
 }
 
@@ -299,45 +336,39 @@ async function upsertShopifyProduct(
 
   const productSettings = jsonObject(style.productSettings);
 
-  // Per-style, opt-in — every axis a merchant hasn't configured on the
-  // Product tab is simply absent, and an empty axis list (the common
-  // case, and every style before this feature existed) publishes as
-  // the original single "Default Title" variant, exactly as before.
-  const axes: VariantAxis[] = [];
-
-  if (style.sizeOptions.length > 0) {
-    axes.push({
-      name: "Size",
-      values: style.sizeOptions.map((option) => ({
-        optionId: option.id,
-        label: option.label,
-        priceContribution: Number(option.price),
-        compareAtContribution: option.compareAtPrice
-          ? Number(option.compareAtPrice)
+  // Per-style, opt-in — every role: VARIANT option a merchant hasn't
+  // configured any choices under is simply absent, and an empty axis
+  // list (the common case, and every style before this feature
+  // existed) publishes as the original single "Default Title" variant,
+  // exactly as before. Data-driven over however many VARIANT options
+  // the style has (was two hardcoded Size/Framing blocks) — the SIZE
+  // axis's own choice contributes an *absolute* price (it replaces
+  // basePrice, same as the original two-axis behavior), every other
+  // axis's choice contributes a price *delta* on top — see the price
+  // reduction below.
+  const axes: VariantAxis[] = style.options
+    .filter((option) => option.role === "VARIANT" && option.choices.length > 0)
+    .map((option) => ({
+      optionId: option.id,
+      displayName: option.label,
+      axisRole: option.axisRole as "SIZE" | "FRAMING" | null,
+      values: option.choices.map((choice) => ({
+        choiceId: choice.id,
+        label: choice.label,
+        priceContribution: Number(choice.priceDelta ?? 0),
+        compareAtContribution: choice.compareAtPriceDelta
+          ? Number(choice.compareAtPriceDelta)
           : null,
-        requiresShipping: null,
-        scalePercent: option.scalePercent,
-        frameColor: null,
+        requiresShipping:
+          option.axisRole === "FRAMING" ? choice.requiresShipping : null,
+        scalePercent: option.axisRole === "SIZE" ? choice.scalePercent : null,
+        frameColor: option.type === "COLOR_SWATCH" ? choice.hexColor : null,
+        frameImageAssetId:
+          option.type === "IMAGE_SWATCH" ? choice.frameImageAssetId : null,
+        borderThicknessPx:
+          option.type === "IMAGE_SWATCH" ? choice.borderThicknessPx : null,
       })),
-    });
-  }
-
-  if (style.framingOptions.length > 0) {
-    axes.push({
-      name: "Framing",
-      values: style.framingOptions.map((option) => ({
-        optionId: option.id,
-        label: option.label,
-        priceContribution: Number(option.priceDelta),
-        compareAtContribution: option.compareAtPriceDelta
-          ? Number(option.compareAtPriceDelta)
-          : null,
-        requiresShipping: option.requiresShipping,
-        scalePercent: null,
-        frameColor: option.frameColor,
-      })),
-    });
-  }
+    }));
 
   const hasAxes = axes.length > 0;
 
@@ -362,7 +393,7 @@ async function upsertShopifyProduct(
   const legacyVariantId =
     typeof productSettings.defaultVariantId === "string"
       ? productSettings.defaultVariantId
-      : (existingVariantIdByCompositeKey.get("none::none") ?? null);
+      : (existingVariantIdByCompositeKey.get("none") ?? null);
 
   // Already-attached assets are normally referenced by their known
   // Shopify media ID (kept as-is), and new ones submitted by URL —
@@ -421,14 +452,13 @@ async function upsertShopifyProduct(
         },
       ],
 
-      // One Shopify product option per active axis (Size, Framing) —
-      // or, if neither is configured, Shopify's own "Title"/"Default
-      // Title" convention for a plain single-variant product
-      // (productSet still requires an explicit option/optionValues
-      // even for that simple case).
+      // One Shopify product option per active axis — or, if none are
+      // configured, Shopify's own "Title"/"Default Title" convention
+      // for a plain single-variant product (productSet still requires
+      // an explicit option/optionValues even for that simple case).
       productOptions: hasAxes
         ? axes.map((axis) => ({
-            name: axis.name,
+            name: axis.displayName,
             values: axis.values.map((value) => ({ name: value.label })),
           }))
         : [{ name: "Title", values: [{ name: "Default Title" }] }],
@@ -451,22 +481,23 @@ async function upsertShopifyProduct(
                 ? null
                 : rawExistingVariantId;
 
-            const sizeValue =
-              combination.find((entry) => entry.axisName === "Size")
-                ?.value ?? null;
+            const sizeEntry = sizeEntryOf(combination);
 
-            const framingValue =
-              combination.find((entry) => entry.axisName === "Framing")
-                ?.value ?? null;
+            const framingEntry = framingEntryOf(combination);
 
-            // Size contributes the base price (or the Style's flat
-            // basePrice if there's no Size axis at all); Framing is
-            // always an add-on delta on top of that.
-            const basePrice = sizeValue
-              ? sizeValue.priceContribution
+            // The SIZE axis's choice contributes the *absolute* base
+            // price (or the Style's flat basePrice if there's no SIZE
+            // axis at all); every other axis's choice is always an
+            // add-on delta on top of that.
+            const basePrice = sizeEntry
+              ? sizeEntry.value.priceContribution
               : Number(style.basePrice);
 
-            const price = basePrice + (framingValue?.priceContribution ?? 0);
+            const otherDeltaSum = combination
+              .filter((entry) => entry.axis.axisRole !== "SIZE")
+              .reduce((sum, entry) => sum + entry.value.priceContribution, 0);
+
+            const price = basePrice + otherDeltaSum;
 
             // A missing compareAt/delta on a *present* axis means "no
             // discount from that axis" (falls back to its own price
@@ -474,19 +505,24 @@ async function upsertShopifyProduct(
             // compareAtPrice below the actual price, which Shopify
             // rejects. An axis that's absent entirely contributes
             // nothing either way.
-            const sizeCompareAtBase = sizeValue
-              ? (sizeValue.compareAtContribution ?? sizeValue.priceContribution)
+            const sizeCompareAtBase = sizeEntry
+              ? (sizeEntry.value.compareAtContribution ??
+                  sizeEntry.value.priceContribution)
               : style.compareAtPrice
                 ? Number(style.compareAtPrice)
                 : Number(style.basePrice);
 
-            const framingCompareAtDelta = framingValue
-              ? (framingValue.compareAtContribution ??
-                  framingValue.priceContribution)
-              : 0;
+            const otherCompareAtDeltaSum = combination
+              .filter((entry) => entry.axis.axisRole !== "SIZE")
+              .reduce(
+                (sum, entry) =>
+                  sum +
+                  (entry.value.compareAtContribution ??
+                    entry.value.priceContribution),
+                0,
+              );
 
-            const combinedCompareAt =
-              sizeCompareAtBase + framingCompareAtDelta;
+            const combinedCompareAt = sizeCompareAtBase + otherCompareAtDeltaSum;
 
             const compareAtPrice =
               combinedCompareAt > price ? combinedCompareAt.toFixed(2) : null;
@@ -496,22 +532,22 @@ async function upsertShopifyProduct(
               price: price.toFixed(2),
               compareAtPrice,
               optionValues: combination.map((entry) => ({
-                optionName: entry.axisName,
+                optionName: entry.axis.displayName,
                 name: entry.value.label,
               })),
               // Made to order from the customer's own upload — there's
-              // no real stock to run out of, on any size/framing
-              // combination, so every variant always stays purchasable
-              // regardless of on-hand quantity (inventoryPolicy
-              // CONTINUE). Inventory itself stays tracked (not
-              // tracked: false) so the merchant still gets normal
-              // sold-count reporting — CONTINUE is what keeps it from
-              // ever actually blocking a sale, not disabling tracking.
-              // Only Framing ever makes a variant a real physical
-              // product — everything else in this app is digital.
+              // no real stock to run out of, on any combination, so
+              // every variant always stays purchasable regardless of
+              // on-hand quantity (inventoryPolicy CONTINUE). Inventory
+              // itself stays tracked (not tracked: false) so the
+              // merchant still gets normal sold-count reporting —
+              // CONTINUE is what keeps it from ever actually blocking
+              // a sale, not disabling tracking. Only the FRAMING axis
+              // ever makes a variant a real physical product —
+              // everything else in this app is digital.
               inventoryItem: {
                 tracked: true,
-                requiresShipping: framingValue?.requiresShipping ?? false,
+                requiresShipping: framingEntry?.value.requiresShipping ?? false,
               },
               inventoryPolicy: "CONTINUE",
             };
@@ -676,13 +712,14 @@ async function upsertShopifyProduct(
         .map((combination) => {
           const compositeKey = compositeKeyFor(combination);
 
-          // Every axis in this combination must match — with two axes,
-          // several variant nodes share the same Size value (one per
-          // Framing choice), so checking only one axis (.some() alone)
-          // can grab the wrong node. Every expected {name, value} pair
-          // must be present on the node's selectedOptions.
+          // Every axis in this combination must match — with several
+          // axes, several variant nodes share the same value on one
+          // axis (differing only on another), so checking only one
+          // axis (.some() alone) can grab the wrong node. Every
+          // expected {name, value} pair must be present on the node's
+          // selectedOptions.
           const expectedOptions = combination.map((entry) => ({
-            name: entry.axisName,
+            name: entry.axis.displayName,
             value: entry.value.label,
           }));
 
@@ -703,23 +740,25 @@ async function upsertShopifyProduct(
             return null;
           }
 
-          // label/scalePercent always come from the Size axis only —
+          // label/scalePercent always come from the SIZE axis only —
           // Framing never affects which image resolution to serve.
-          const sizeValue =
-            combination.find((entry) => entry.axisName === "Size")?.value ??
-            null;
+          const sizeEntry = sizeEntryOf(combination);
 
-          const framingValue =
-            combination.find((entry) => entry.axisName === "Framing")
-              ?.value ?? null;
+          const framingEntry = framingEntryOf(combination);
+
+          const frameImageAssetId = framingEntry?.value.frameImageAssetId ?? null;
 
           return {
             compositeKey,
             variantId,
             numericVariantId: numericIdFromGid(variantId),
-            label: sizeValue ? sizeValue.label : "Default Title",
-            scalePercent: sizeValue?.scalePercent ?? 100,
-            frameColor: framingValue?.frameColor ?? null,
+            label: sizeEntry ? sizeEntry.value.label : "Default Title",
+            scalePercent: sizeEntry?.value.scalePercent ?? 100,
+            frameColor: framingEntry?.value.frameColor ?? null,
+            frameImageUrl: frameImageAssetId
+              ? createSignedStyleAssetUrl(requestUrl, frameImageAssetId, style.shop)
+              : null,
+            borderThicknessPx: framingEntry?.value.borderThicknessPx ?? null,
           };
         })
         .filter((entry): entry is SizeVariantMapping => entry !== null)
@@ -732,12 +771,14 @@ async function upsertShopifyProduct(
 
         return [
           {
-            compositeKey: "none::none",
+            compositeKey: "none",
             variantId,
             numericVariantId: numericIdFromGid(variantId),
             label: "Default Title",
             scalePercent: 100,
             frameColor: null,
+            frameImageUrl: null,
+            borderThicknessPx: null,
           },
         ];
       })();

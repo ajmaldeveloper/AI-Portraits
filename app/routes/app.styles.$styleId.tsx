@@ -92,9 +92,11 @@ export default function StyleWorkspace() {
   const active =
     pathname === base || pathname === `${base}/`
       ? "overview"
-      : pathname.startsWith(`${base}/product`)
-        ? "product"
-        : pathname.startsWith(`${base}/generation`)
+      : pathname.startsWith(`${base}/options`)
+        ? "options"
+        : pathname.startsWith(`${base}/product`)
+          ? "product"
+          : pathname.startsWith(`${base}/generation`)
           ? "generation"
           : pathname.startsWith(`${base}/fields`)
             ? "fields"
@@ -146,6 +148,13 @@ export default function StyleWorkspace() {
                 variant={navVariant("product")}
               >
                 Product
+              </s-button>
+
+              <s-button
+                href={`${base}/options`}
+                variant={navVariant("options")}
+              >
+                Product options
               </s-button>
 
               <s-button href={`${base}/media`} variant={navVariant("media")}>

@@ -77,28 +77,39 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         options: stringArray(field.options),
       })),
 
-      // Lets the storefront match the theme's native size/variant
-      // picker back to the right result-image URL from resultUrls (see
+      // Lets the storefront match the theme's native variant picker
+      // back to the right result-image URL from resultUrls (see
       // app-proxy.generations.$generationId.tsx) — numericVariantId
       // matches what the cart form's own "id" field submits.
-      // frameColor (null when this variant has no visual frame, e.g. a
-      // "No Frame" choice) drives the storefront's CSS border — see
-      // SizeVariantMapping's own comment for where it comes from.
-      sizeOptions: parseSizeVariants(style.productSettings).map((entry) => ({
+      // frameColor/frameImageUrl (both null when this variant has no
+      // visual frame, e.g. a "No Frame" choice) drive the storefront's
+      // CSS border — see SizeVariantMapping's own comment for where
+      // they come from. A variant carries at most one of the two —
+      // whichever the Framing-axis choice's own type set.
+      variantOptions: parseSizeVariants(style.productSettings).map((entry) => ({
         variantId: entry.numericVariantId,
         label: entry.label,
         scalePercent: entry.scalePercent,
         frameColor: entry.frameColor,
+        frameImageUrl: entry.frameImageUrl,
+        borderThicknessPx: entry.borderThicknessPx,
       })),
 
-      // Independent of Framing's own Shopify variants — any mat color
-      // combines with any Framing choice — so these come straight from
-      // the Style's own relation, not the publish-time sizeVariants
-      // mapping, and stay current even before a republish.
-      matColors: style.matColors.map((color) => ({
-        label: color.label,
-        hexColor: color.hexColor,
-      })),
+      // Independent of Framing's own Shopify variants — any EXTRA
+      // option choice combines with any Framing choice — so these come
+      // straight from the Style's own relations, not the publish-time
+      // sizeVariants mapping, and stay current even before a
+      // republish. One entry per role: EXTRA StyleOption (Mat color is
+      // just whichever one a merchant has set up).
+      extraOptions: style.options
+        .filter((option) => option.role === "EXTRA")
+        .map((option) => ({
+          label: option.label,
+          choices: option.choices.map((choice) => ({
+            label: choice.label,
+            hexColor: choice.hexColor,
+          })),
+        })),
     },
     {
       headers: {

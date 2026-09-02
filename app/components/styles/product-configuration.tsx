@@ -3,9 +3,6 @@ import { useNavigation, useSubmit } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 
 import { eventValue } from "../../utils/event-value";
-import { FramingOptionsEditor, type FramingOptionView } from "./framing-options-editor";
-import { MatColorsEditor, type MatColorView } from "./mat-colors-editor";
-import { SizeOptionsEditor, type SizeOptionView } from "./size-options-editor";
 
 export type CollectionSummary = {
   id: string;
@@ -20,9 +17,9 @@ type ProductConfigurationProps = {
   compareAtPrice: string;
   tags: string[];
   collections: CollectionSummary[];
-  sizeOptions: SizeOptionView[];
-  framingOptions: FramingOptionView[];
-  matColors: MatColorView[];
+  // Whether the style has any priced (role: VARIANT) options with
+  // choices at all — see the Product options tab for those themselves.
+  hasVariantOptions: boolean;
   editable: boolean;
 };
 
@@ -33,9 +30,7 @@ export function ProductConfiguration({
   compareAtPrice: initialCompareAtPrice,
   tags: initialTags,
   collections: initialCollections,
-  sizeOptions,
-  framingOptions,
-  matColors,
+  hasVariantOptions,
   editable,
 }: ProductConfigurationProps) {
   const shopify = useAppBridge();
@@ -45,9 +40,8 @@ export function ProductConfiguration({
   const submit = useSubmit();
 
   // Scoped to an actual "saveProduct" submission, not just any pending
-  // navigation (including size/framing modal submits, which use their
-  // own intents) — a bare loading/GET transition, or a size/framing
-  // save, must not flash this button into a loading state.
+  // navigation — a bare loading/GET transition must not flash this
+  // button into a loading state.
   const saving =
     navigation.state !== "idle" &&
     navigation.formData?.get("intent") === "saveProduct";
@@ -73,12 +67,6 @@ export function ProductConfiguration({
   const initialCollectionIds = initialCollections.map(
     (collection) => collection.id,
   );
-
-  // Mirrors Shopify's own product form: the flat price only means
-  // anything for the single default variant. Once any size or framing
-  // option exists, the product is multi-variant and each variant's own
-  // price (set on those options) is what actually applies.
-  const hasVariants = sizeOptions.length > 0 || framingOptions.length > 0;
 
   const isDirty =
     productTitle !== initialProductTitle ||
@@ -135,10 +123,10 @@ export function ProductConfiguration({
     }
   };
 
-  // A plain button, not a native form submit — Sizes/Framing each have
-  // their own popup forms, and HTML forms can't nest, so this section
-  // can't be wrapped in one shared <Form> with them and still have
-  // Save render after them. Submitting imperatively from tracked state
+  // A plain button, not a native form submit — the Add tag modal has
+  // its own popup form, and HTML forms can't nest, so this section
+  // can't be wrapped in one shared <Form> with it and still have Save
+  // render after it. Submitting imperatively from tracked state
   // sidesteps that while still hitting the same action/intent.
   const handleSave = () => {
     const formData = new FormData();
@@ -178,9 +166,9 @@ export function ProductConfiguration({
             autocomplete="off"
           />
 
-          {hasVariants ? (
+          {hasVariantOptions ? (
             <s-text color="subdued">
-              Priced per size/framing option below.
+              Priced per option below (see the Product options tab).
             </s-text>
           ) : (
             <s-query-container>
@@ -217,15 +205,6 @@ export function ProductConfiguration({
           )}
         </s-stack>
       </s-section>
-
-      <SizeOptionsEditor sizeOptions={sizeOptions} editable={editable} />
-
-      <FramingOptionsEditor
-        framingOptions={framingOptions}
-        editable={editable}
-      />
-
-      <MatColorsEditor matColors={matColors} editable={editable} />
 
       <s-section heading="Product tags">
         <s-stack direction="block" gap="base">

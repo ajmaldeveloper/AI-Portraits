@@ -196,21 +196,16 @@ export async function getStyleForShop(shop: string, styleId: string) {
         },
       },
 
-      sizeOptions: {
+      options: {
         orderBy: {
           position: "asc",
         },
-      },
-
-      framingOptions: {
-        orderBy: {
-          position: "asc",
-        },
-      },
-
-      matColors: {
-        orderBy: {
-          position: "asc",
+        include: {
+          choices: {
+            orderBy: {
+              position: "asc",
+            },
+          },
         },
       },
 

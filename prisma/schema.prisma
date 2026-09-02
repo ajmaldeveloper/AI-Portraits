@@ -42,6 +42,23 @@ enum StyleAssetKind {
   PRODUCT_SELECTED
   CUSTOMER_UPLOAD
   CUSTOMER_RESULT
+  FRAME_TEXTURE
+}
+
+enum StyleOptionType {
+  TEXT
+  COLOR_SWATCH
+  IMAGE_SWATCH
+}
+
+enum StyleOptionRole {
+  VARIANT
+  EXTRA
+}
+
+enum StyleOptionAxisRole {
+  SIZE
+  FRAMING
 }
 
 enum GenerationPurpose {
@@ -111,12 +128,10 @@ model Style {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  fields         StyleField[]
-  assets         StyleAsset[]
-  generations    Generation[]
-  sizeOptions    StyleSizeOption[]
-  framingOptions StyleFramingOption[]
-  matColors      StyleMatColor[]
+  fields      StyleField[]
+  assets      StyleAsset[]
+  generations Generation[]
+  options     StyleOption[]
 
   @@index([shop, status])
   @@index([shop, createdAt])
@@ -169,6 +184,10 @@ model StyleAsset {
 
   style      Style       @relation(fields: [styleId], references: [id], onDelete: Cascade)
   generation Generation? @relation(fields: [generationId], references: [id], onDelete: SetNull)
+
+  // Back-relation only — a FRAME_TEXTURE-kind asset referenced by a
+  // StyleOptionChoice's own frameImageAssetId FK.
+  framingChoices StyleOptionChoice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -256,98 +275,88 @@ model ShopGenerationDefaults {
   updatedAt DateTime @updatedAt
 }
 
-// Per-style list of print/download size variants — configured on the
-// Product tab, not shop-wide. Each becomes its own Shopify variant at
-// publish time, with its own price/compareAtPrice (no product uses
-// this at all until a merchant explicitly adds a size here — an empty
-// list means "single-variant product," same as before this existed).
-// scalePercent is applied against the AI's native output resolution at
-// serve time (see media.style-assets.$assetId.ts) — 100 means the
-// untouched original bytes, anything lower is downscaled on read. id
-// is the stable key Style.productSettings.sizeVariants matches against
-// on republish, so renaming a label later renames the existing Shopify
-// variant instead of deleting and recreating it.
-model StyleSizeOption {
-  id String @id @default(cuid())
-
-  styleId String
-
-  label          String
-  scalePercent   Int
-  price          Decimal
-  compareAtPrice Decimal?
-  position       Int      @default(0)
-
-  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([styleId, label])
-  @@index([styleId, position])
-}
-
-// Per-style Framing option — a second, independent variant axis from
-// Size. Deliberately one free-text axis (e.g. "No Frame", "Framed -
-// Black", "Framed - Natural Wood") rather than separate conditional
-// "frame color"/"frame style" sub-options, to avoid Shopify's
-// combinatorial variant explosion. Unlike everything else in this
-// app, a framed row can be a real physical product — requiresShipping
-// controls that per row. priceDelta/compareAtPriceDelta are added on
-// top of whichever size the customer picks (or the Style's flat
-// basePrice if no sizes exist), not an absolute price. Same
-// stable-id-matching reasoning as StyleSizeOption.
+// Generalized, merchant-configurable product option — edited on its
+// own "Product options" tab. Replaces what used to be three hardcoded
+// concepts (Sizes, Framing, Mat colors) with one flexible system:
 //
-// frameColor is purely app-owned visual data — never sent to Shopify
-// (its productSet mutation has no native option-value color swatch
-// input). Null means "no visual frame for this row" (e.g. a "No
-// Frame" option) — rendered as a CSS border around the customer's
-// result image, by this style's own theme extension JS, whenever the
-// customer's currently-selected Framing variant carries one.
-model StyleFramingOption {
-  id String @id @default(cuid())
-
-  styleId String
-
-  label               String
-  priceDelta          Decimal
-  compareAtPriceDelta Decimal?
-  requiresShipping    Boolean
-  frameColor          String?
-  position            Int      @default(0)
-
-  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([styleId, label])
-  @@index([styleId, position])
-}
-
-// Reusable, merchant-managed list of mat colors, edited on the Product
-// tab the same way Sizes/Framing are. Purely app-owned visual data —
-// never sent to Shopify, and price-neutral (unlike Framing, picking a
-// mat color never changes price/shipping) — selected independently by
-// the customer on the storefront and rendered as an inner colored ring
-// between the frame border and the photo, only when the customer's
-// selected Framing variant is actually framed (has its own frameColor).
-model StyleMatColor {
+// - role: VARIANT choices become real Shopify variants at publish
+//   time (priced, via style-publish.server.ts's cartesian-product
+//   logic — this app deliberately keeps using native Shopify variants
+//   for pricing rather than an app-managed cart-transform mechanism).
+//   role: EXTRA choices never touch Shopify — purely visual/app-owned,
+//   price-neutral, independent of whichever variant is selected (e.g.
+//   Mat color).
+// - axisRole is meaningful only for role: VARIANT options, and at
+//   most one option per style may hold each value: SIZE marks the one
+//   axis whose choices carry scalePercent (drives image-resolution
+//   scaling at serve time — see media.style-assets.$assetId.ts) and
+//   must keep at least one choice at 100%; FRAMING marks the one axis
+//   whose choices may carry requiresShipping/a visual frame (color or
+//   uploaded image) — the only axis that can make a variant a real
+//   physical product. A style can still add further plain VARIANT
+//   axes (axisRole null) — just price, no special meaning — beyond
+//   these two.
+// - type controls how a choice is edited/rendered: TEXT (plain
+//   labeled buttons), COLOR_SWATCH (hex color), IMAGE_SWATCH
+//   (merchant-uploaded texture, rendered via CSS border-image).
+model StyleOption {
   id String @id @default(cuid())
 
   styleId String
 
   label    String
-  hexColor String
-  position Int    @default(0)
+  type     StyleOptionType
+  role     StyleOptionRole
+  axisRole StyleOptionAxisRole?
+  position Int                  @default(0)
 
-  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  style   Style               @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  choices StyleOptionChoice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([styleId, label])
   @@index([styleId, position])
+  // At most one StyleOption per style may have axisRole SIZE, and at
+  // most one may have axisRole FRAMING — enforced in application code
+  // (style-options.server.ts), since Postgres partial-unique indexes
+  // aren't expressible in Prisma's schema DSL.
+}
+
+// One selectable value under a StyleOption. Which fields are
+// meaningful depends entirely on the parent option's type/role/
+// axisRole (see StyleOption's own comment) — e.g. priceDelta only
+// matters when the parent's role is VARIANT, hexColor only when its
+// type is COLOR_SWATCH. id is the stable key
+// Style.productSettings.sizeVariants matches against on republish, so
+// renaming a label later renames the existing Shopify variant instead
+// of deleting and recreating it (same reasoning as the old
+// StyleSizeOption/StyleFramingOption).
+model StyleOptionChoice {
+  id String @id @default(cuid())
+
+  optionId String
+
+  label               String
+  priceDelta          Decimal?
+  compareAtPriceDelta Decimal?
+  requiresShipping    Boolean  @default(false)
+  scalePercent        Int?
+  hexColor            String?
+  frameImageAssetId   String?
+  borderThicknessPx   Int?
+  position            Int      @default(0)
+
+  option          StyleOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  frameImageAsset StyleAsset? @relation(fields: [frameImageAssetId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([optionId, label])
+  @@index([optionId, position])
+  @@index([frameImageAssetId])
 }
 
 // Shopify's standard offline/online session model remains independent from

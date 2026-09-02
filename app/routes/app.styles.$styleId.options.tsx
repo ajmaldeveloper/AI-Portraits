@@ -1,0 +1,328 @@
+import { useEffect } from "react";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useActionData, useLoaderData } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
+import { boundary } from "@shopify/shopify-app-react-router/server";
+
+import { StyleOptionsEditor } from "../components/styles/style-options-editor";
+import { createSignedStyleAssetUrl } from "../services/media/media-signing.server";
+import { uploadStyleFrameTexture } from "../services/styles/style-product-media.server";
+import {
+  createStyleOption,
+  createStyleOptionChoice,
+  deleteStyleOption,
+  deleteStyleOptionChoice,
+  reorderStyleOptionChoices,
+  reorderStyleOptions,
+  type StyleOptionChoiceInput,
+  type StyleOptionInput,
+  updateStyleOption,
+  updateStyleOptionChoice,
+} from "../services/styles/style-options.server";
+import { requireStyleForShop, styleCanBeEdited } from "../services/styles/style.server";
+import { authenticate } from "../shopify.server";
+import { useNavigatingTo } from "../utils/use-navigating-to";
+
+function formValue(formData: FormData, key: string) {
+  const value = formData.get(key);
+
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function numberValue(formData: FormData, key: string) {
+  const value = formValue(formData, key);
+
+  return value ? Number(value) : null;
+}
+
+export const loader = async ({ request, params }: LoaderFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+
+  const styleId = params.styleId;
+
+  if (!styleId) {
+    throw new Response("Style ID is required", { status: 400 });
+  }
+
+  const style = await requireStyleForShop(session.shop, styleId);
+
+  const url = new URL(request.url);
+
+  const editable = styleCanBeEdited(style);
+
+  return {
+    styleId,
+
+    notice: url.searchParams.get("notice"),
+
+    editable,
+
+    options: style.options.map((option) => ({
+      id: option.id,
+      label: option.label,
+      type: option.type,
+      role: option.role,
+      axisRole: option.axisRole,
+      choices: option.choices.map((choice) => ({
+        id: choice.id,
+        label: choice.label,
+        priceDelta: choice.priceDelta?.toString() ?? "",
+        compareAtPriceDelta: choice.compareAtPriceDelta?.toString() ?? "",
+        requiresShipping: choice.requiresShipping,
+        scalePercent: choice.scalePercent,
+        hexColor: choice.hexColor ?? "",
+        frameImageAssetId: choice.frameImageAssetId,
+        frameImageUrl: choice.frameImageAssetId
+          ? createSignedStyleAssetUrl(request.url, choice.frameImageAssetId, session.shop)
+          : null,
+        borderThicknessPx: choice.borderThicknessPx,
+      })),
+    })),
+  };
+};
+
+export const action = async ({ request, params }: ActionFunctionArgs) => {
+  const { session, redirect } = await authenticate.admin(request);
+
+  const styleId = params.styleId;
+
+  if (!styleId) {
+    throw new Response("Style ID is required", { status: 400 });
+  }
+
+  const formData = await request.formData();
+
+  const intent = formValue(formData, "intent");
+
+  try {
+    if (intent === "addOption" || intent === "editOption") {
+      const input: StyleOptionInput = {
+        label: formValue(formData, "label"),
+        type: formValue(formData, "type"),
+        role: formValue(formData, "role"),
+        axisRole: formValue(formData, "axisRole") || null,
+      };
+
+      if (intent === "addOption") {
+        await createStyleOption(session.shop, styleId, input);
+      } else {
+        const optionId = formValue(formData, "optionId");
+
+        await updateStyleOption(session.shop, styleId, optionId, input);
+      }
+
+      return redirect(`/app/styles/${styleId}/options?notice=option-saved`);
+    }
+
+    if (intent === "deleteOption") {
+      const optionId = formValue(formData, "optionId");
+
+      await deleteStyleOption(session.shop, styleId, optionId);
+
+      return redirect(`/app/styles/${styleId}/options?notice=option-deleted`);
+    }
+
+    if (intent === "reorderOptions") {
+      const orderedOptionIds = formData
+        .getAll("optionId")
+        .filter((value): value is string => typeof value === "string" && value.length > 0);
+
+      if (orderedOptionIds.length === 0) {
+        throw new Error("Option order is required.");
+      }
+
+      await reorderStyleOptions(session.shop, styleId, orderedOptionIds);
+
+      return redirect(`/app/styles/${styleId}/options?notice=options-reordered`);
+    }
+
+    if (intent === "addChoice" || intent === "editChoice") {
+      const optionId = formValue(formData, "optionId");
+
+      // A fresh upload takes precedence over a previously-uploaded
+      // asset id carried in a hidden field (editing a choice without
+      // picking a new file keeps the existing texture) — this is the
+      // one field that needs a real side effect (a DB write) before
+      // the choice itself can be validated/saved, so it happens first
+      // and in the same request rather than as a separate round trip.
+      const uploadedFile = formData.get("frameImageFile");
+
+      let frameImageAssetId = formValue(formData, "existingFrameImageAssetId") || null;
+
+      if (uploadedFile instanceof File && uploadedFile.size > 0) {
+        const bytes = new Uint8Array(await uploadedFile.arrayBuffer());
+
+        const asset = await uploadStyleFrameTexture(session.shop, styleId, {
+          bytes,
+          mimeType: uploadedFile.type || "application/octet-stream",
+        });
+
+        frameImageAssetId = asset.id;
+      }
+
+      const input: StyleOptionChoiceInput = {
+        label: formValue(formData, "label"),
+        priceDelta: formValue(formData, "priceDelta") || null,
+        compareAtPriceDelta: formValue(formData, "compareAtPriceDelta") || null,
+        requiresShipping: formData.has("requiresShipping"),
+        scalePercent: numberValue(formData, "scalePercent"),
+        hexColor: formValue(formData, "hexColor") || null,
+        frameImageAssetId,
+        borderThicknessPx: numberValue(formData, "borderThicknessPx"),
+      };
+
+      if (intent === "addChoice") {
+        await createStyleOptionChoice(session.shop, styleId, optionId, input);
+      } else {
+        const choiceId = formValue(formData, "choiceId");
+
+        await updateStyleOptionChoice(session.shop, styleId, optionId, choiceId, input);
+      }
+
+      return redirect(`/app/styles/${styleId}/options?notice=choice-saved`);
+    }
+
+    if (intent === "deleteChoice") {
+      const optionId = formValue(formData, "optionId");
+
+      const choiceId = formValue(formData, "choiceId");
+
+      await deleteStyleOptionChoice(session.shop, styleId, optionId, choiceId);
+
+      return redirect(`/app/styles/${styleId}/options?notice=choice-deleted`);
+    }
+
+    if (intent === "reorderChoices") {
+      const optionId = formValue(formData, "optionId");
+
+      const orderedChoiceIds = formData
+        .getAll("choiceId")
+        .filter((value): value is string => typeof value === "string" && value.length > 0);
+
+      if (orderedChoiceIds.length === 0) {
+        throw new Error("Choice order is required.");
+      }
+
+      await reorderStyleOptionChoices(session.shop, styleId, optionId, orderedChoiceIds);
+
+      return redirect(`/app/styles/${styleId}/options?notice=choices-reordered`);
+    }
+
+    throw new Error("Unknown action.");
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Could not update product options.",
+    };
+  }
+};
+
+const notices: Record<string, string> = {
+  "option-saved": "Option saved",
+  "option-deleted": "Option deleted",
+  "options-reordered": "Options reordered",
+  "choice-saved": "Choice saved",
+  "choice-deleted": "Choice deleted",
+  "choices-reordered": "Choices reordered",
+};
+
+export default function StyleOptions() {
+  const data = useLoaderData<typeof loader>();
+
+  const actionData = useActionData<typeof action>();
+
+  const shopify = useAppBridge();
+
+  const backNav = useNavigatingTo();
+
+  const nextNav = useNavigatingTo();
+
+  useEffect(() => {
+    if (!data.notice) {
+      return;
+    }
+
+    const message = notices[data.notice];
+
+    if (!message) {
+      return;
+    }
+
+    // A successful add/edit/delete leaves its triggering modal open,
+    // showing stale content behind the toast. s-modal exposes
+    // hideOverlay() directly on the element, but on this tab (many
+    // s-modal instances at once — every option/choice row has its own
+    // Edit and Delete modal) it isn't reliably closing them. Simulating
+    // a click on each modal's own Cancel button reuses the exact
+    // interaction that's known to work (a human clicking Cancel), via
+    // a temporary invoker button rather than assuming a Cancel button
+    // exists inside every modal.
+    const closeOpenModals = () => {
+      document.querySelectorAll<HTMLElement>("s-modal").forEach((modal) => {
+        (modal as HTMLElement & { hideOverlay?: () => void }).hideOverlay?.();
+
+        const id = modal.id;
+
+        if (!id) {
+          return;
+        }
+
+        const invoker = document.createElement("s-button") as HTMLElement & {
+          commandFor?: string;
+          command?: string;
+        };
+
+        invoker.style.display = "none";
+
+        document.body.appendChild(invoker);
+
+        invoker.commandFor = id;
+        invoker.command = "--hide";
+        invoker.setAttribute("commandfor", id);
+        invoker.setAttribute("command", "--hide");
+
+        invoker.click();
+        invoker.remove();
+      });
+    };
+
+    closeOpenModals();
+    requestAnimationFrame(closeOpenModals);
+
+    shopify.toast.show(message);
+
+    window.history.replaceState(null, "", `/app/styles/${data.styleId}/options`);
+  }, [data.notice, data.styleId, shopify]);
+
+  return (
+    <s-stack direction="block" gap="base">
+      {actionData?.error ? (
+        <s-banner tone="critical" heading="Could not save product options">
+          <s-paragraph>{actionData.error}</s-paragraph>
+        </s-banner>
+      ) : null}
+
+      <StyleOptionsEditor options={data.options} editable={data.editable} />
+
+      <s-stack direction="inline" gap="base">
+        <s-button
+          href={`/app/styles/${data.styleId}/product`}
+          loading={backNav.loading}
+          onClick={backNav.onClick}
+        >
+          Back
+        </s-button>
+
+        <s-button
+          href={`/app/styles/${data.styleId}/media`}
+          variant="primary"
+          loading={nextNav.loading}
+          onClick={nextNav.onClick}
+        >
+          Next
+        </s-button>
+      </s-stack>
+    </s-stack>
+  );
+}
+
+export const headers: HeadersFunction = (headersArgs) => boundary.headers(headersArgs);

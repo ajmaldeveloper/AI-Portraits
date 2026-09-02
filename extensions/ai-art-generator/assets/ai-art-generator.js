@@ -20,10 +20,13 @@ class AiArtGenerator extends HTMLElement {
     this.photoFile = null;
     this.pollTimer = null;
 
-    // { variantId, label, scalePercent }[] — from the app proxy, only
-    // populated once the product's been published with the shop's
-    // configured print sizes as real Shopify variants.
-    this.sizeOptions = [];
+    // { variantId, label, scalePercent, frameColor, frameImageUrl,
+    // borderThicknessPx }[] — from the app proxy, one entry per real
+    // Shopify variant, only populated once the product's been
+    // published. frameColor/frameImageUrl are mutually exclusive
+    // (a Framing choice is COLOR_SWATCH or IMAGE_SWATCH type, never
+    // both) and both null for a variant with no visual frame.
+    this.variantOptions = [];
 
     // Captured at submit time — the form's own inputs are gone by the
     // time the theme's native "Add to cart" is clicked, since a
@@ -34,12 +37,17 @@ class AiArtGenerator extends HTMLElement {
     this.generationId = null;
     this.generationResultUrl = null;
 
-    // { label, hexColor }[] — from the app proxy, independent of
-    // Framing's own Shopify variant (any mat color combines with any
-    // Framing choice). Only ever shown/applied when the currently
-    // selected variant is actually framed.
-    this.matColors = [];
-    this.selectedMatColor = null;
+    // { label, choices: {label, hexColor}[] }[] — from the app proxy,
+    // one entry per role: EXTRA StyleOption (Mat color is just
+    // whichever one a merchant has set up). Independent of Framing's
+    // own Shopify variant (any choice combines with any Framing
+    // choice). Only ever shown/applied when the currently selected
+    // variant is actually framed.
+    this.extraOptions = [];
+
+    // { [optionLabel]: selectedChoiceLabel } — which choice is
+    // currently picked for each extra option.
+    this.selectedExtraChoices = {};
   }
 
   connectedCallback() {
@@ -94,7 +102,7 @@ class AiArtGenerator extends HTMLElement {
 
       const selectedVariantId = getSelectedVariantId(form);
 
-      const matchedSize = this.sizeOptions.find(
+      const matchedVariant = this.variantOptions.find(
         (option) => option.variantId === selectedVariantId,
       );
 
@@ -108,41 +116,58 @@ class AiArtGenerator extends HTMLElement {
         this.generationId || "",
       );
 
+      // Extra options are independent of Framing (any choice combines
+      // with any Framing choice), but only meaningful — and only
+      // recorded — when the selected variant is actually framed at
+      // all (either a flat color or an uploaded texture).
+      const isFramed = Boolean(
+        matchedVariant?.frameColor || matchedVariant?.frameImageUrl,
+      );
+
+      const selectedExtraChoices = isFramed
+        ? this.extraOptions
+            .map((option) => ({
+              option,
+              choice: option.choices.find(
+                (choice) => choice.label === this.selectedExtraChoices[option.label],
+              ),
+            }))
+            .filter((entry) => entry.choice)
+        : [];
+
       // The one customer- and merchant-visible artwork link: a
       // readable label as the property's key (all Shopify actually
       // lets a property show — there's no way to give it link text
       // separate from its value) with the short redirect link (no
-      // query string/signature, beyond an optional frame color) as the
-      // value, so it reads as "Preview my portrait: <short link>"
+      // query string/signature, beyond an optional frame/mat color) as
+      // the value, so it reads as "Preview my portrait: <short link>"
       // rather than a wall of raw URL text. When the selected variant
-      // carries a frameColor, it's passed through so the linked copy
-      // has the same mat + frame border composited in as what was
-      // actually ordered — see media.style-assets.$assetId.ts. The
-      // link itself still downloads on click (Content-Disposition:
-      // attachment on the redirect target).
-      // Mat color is independent of Framing (any mat combines with any
-      // Framing choice), but only meaningful — and only recorded — when
-      // the selected variant is actually framed at all.
-      const selectedMat = matchedSize?.frameColor
-        ? this.matColors.find((color) => color.label === this.selectedMatColor)
-        : null;
-
+      // carries a frameColor, it (and any extra color choice) is
+      // passed through so the linked copy has the same mat + frame
+      // border composited in as what was actually ordered — see
+      // media.style-assets.$assetId.ts. Uploaded-texture (IMAGE_SWATCH)
+      // frames aren't baked into the linked file (see that route's own
+      // comment on the scope boundary). The link itself still downloads
+      // on click (Content-Disposition: attachment on the redirect
+      // target).
       if (this.generationId) {
         const artworkUrl = new URL(
           `${this.proxyRoot}/artwork/${encodeURIComponent(this.generationId)}`,
           window.location.origin,
         );
 
-        if (matchedSize?.frameColor) {
+        if (matchedVariant?.frameColor) {
           artworkUrl.searchParams.set(
             "frame",
-            matchedSize.frameColor.replace(/^#/, ""),
+            matchedVariant.frameColor.replace(/^#/, ""),
           );
 
-          if (selectedMat) {
+          const matChoice = selectedExtraChoices.find((entry) => entry.choice.hexColor);
+
+          if (matChoice) {
             artworkUrl.searchParams.set(
               "mat",
-              selectedMat.hexColor.replace(/^#/, ""),
+              matChoice.choice.hexColor.replace(/^#/, ""),
             );
           }
         }
@@ -153,12 +178,15 @@ class AiArtGenerator extends HTMLElement {
         );
       }
 
-      if (matchedSize) {
-        event.formData.set("properties[Print size]", matchedSize.label);
+      if (matchedVariant) {
+        event.formData.set("properties[Print size]", matchedVariant.label);
       }
 
-      if (selectedMat) {
-        event.formData.set("properties[Mat color]", selectedMat.label);
+      for (const entry of selectedExtraChoices) {
+        event.formData.set(
+          `properties[${entry.option.label}]`,
+          entry.choice.label,
+        );
       }
 
       for (const [key, value] of Object.entries(this.submittedFieldValues)) {
@@ -265,13 +293,20 @@ class AiArtGenerator extends HTMLElement {
       }
 
       this.fields = payload.fields || [];
-      this.sizeOptions = payload.sizeOptions || [];
-      this.matColors = payload.matColors || [];
+      this.variantOptions = payload.variantOptions || [];
+      this.extraOptions = payload.extraOptions || [];
 
-      // Default to the first so the mat shows immediately once a
-      // result appears (when the variant is framed) without requiring
-      // a click first — the customer can still switch afterward.
-      this.selectedMatColor = this.matColors[0]?.label ?? null;
+      // Default each extra option to its first choice so the mat
+      // shows immediately once a result appears (when the variant is
+      // framed) without requiring a click first — the customer can
+      // still switch afterward.
+      this.selectedExtraChoices = {};
+
+      for (const option of this.extraOptions) {
+        if (option.choices[0]) {
+          this.selectedExtraChoices[option.label] = option.choices[0].label;
+        }
+      }
 
       this.renderForm();
     } catch {
@@ -569,7 +604,7 @@ class AiArtGenerator extends HTMLElement {
   renderResult(resultUrl) {
     this.innerHTML = `
       <div class="aig-result">
-        ${this.renderMatSwatchesHtml()}
+        ${this.renderExtraOptionSwatchesHtml()}
         <div class="aig-frame-wrap">
           <img src="${resultUrl}" alt="Your personalized artwork" draggable="false" />
         </div>
@@ -590,49 +625,62 @@ class AiArtGenerator extends HTMLElement {
       event.preventDefault(),
     );
 
-    this.wireMatSwatches();
+    this.wireExtraOptionSwatches();
     this.updateFramePreview();
   }
 
   // Rendered above the result image — hidden/shown by updateFramePreview
   // depending on whether the currently selected variant is framed, not
   // omitted outright, so the swatches don't have to be rebuilt every
-  // time the customer switches Framing options back and forth.
-  renderMatSwatchesHtml() {
-    if (this.matColors.length === 0) {
+  // time the customer switches Framing options back and forth. One
+  // swatch group per role: EXTRA StyleOption (Mat color is just
+  // whichever one a merchant has set up).
+  renderExtraOptionSwatchesHtml() {
+    if (this.extraOptions.length === 0) {
       return "";
     }
 
-    const swatches = this.matColors
-      .map(
-        (color) => `
-          <button
-            type="button"
-            class="aig-swatch"
-            style="background:${escapeHtml(color.hexColor)}"
-            data-aig-mat-color="${escapeHtml(color.label)}"
-            aria-pressed="${this.selectedMatColor === color.label}"
-            aria-label="${escapeHtml(color.label)}"
-            title="${escapeHtml(color.label)}"
-          ></button>
-        `,
-      )
+    const groups = this.extraOptions
+      .map((option) => {
+        const swatches = option.choices
+          .map(
+            (choice) => `
+              <button
+                type="button"
+                class="aig-swatch"
+                style="background:${escapeHtml(choice.hexColor)}"
+                data-aig-extra-option="${escapeHtml(option.label)}"
+                data-aig-extra-choice="${escapeHtml(choice.label)}"
+                aria-pressed="${this.selectedExtraChoices[option.label] === choice.label}"
+                aria-label="${escapeHtml(choice.label)}"
+                title="${escapeHtml(choice.label)}"
+              ></button>
+            `,
+          )
+          .join("");
+
+        return `
+          <div class="aig-extra-option-group">
+            <span class="aig-mat-picker-label">${escapeHtml(option.label)}</span>
+            <div class="aig-swatch-group">${swatches}</div>
+          </div>
+        `;
+      })
       .join("");
 
-    return `
-      <div class="aig-mat-picker" hidden>
-        <span class="aig-mat-picker-label">Mat color</span>
-        <div class="aig-swatch-group">${swatches}</div>
-      </div>
-    `;
+    return `<div class="aig-mat-picker" hidden>${groups}</div>`;
   }
 
-  wireMatSwatches() {
-    this.querySelectorAll("[data-aig-mat-color]").forEach((button) => {
+  wireExtraOptionSwatches() {
+    this.querySelectorAll("[data-aig-extra-choice]").forEach((button) => {
       button.addEventListener("click", () => {
-        this.selectedMatColor = button.dataset.aigMatColor;
+        const optionLabel = button.dataset.aigExtraOption;
 
-        this.querySelectorAll("[data-aig-mat-color]").forEach((other) => {
+        this.selectedExtraChoices[optionLabel] = button.dataset.aigExtraChoice;
+
+        this.querySelectorAll(
+          `[data-aig-extra-option="${CSS.escape(optionLabel)}"]`,
+        ).forEach((other) => {
           other.setAttribute("aria-pressed", String(other === button));
         });
 
@@ -641,13 +689,13 @@ class AiArtGenerator extends HTMLElement {
     });
   }
 
-  // Resolves the frameColor carried by whichever Size/Framing variant
-  // the theme's native picker currently has selected, and draws (or
-  // clears) the CSS border + mat ring around the result image
-  // accordingly — a Framing option only sets frameColor when it's an
-  // actual physical frame (e.g. not a "No Frame" row), so this
-  // naturally shows the frame/mat only when a real framed choice is
-  // selected. Safe to call any time — a no-op before a result exists.
+  // Resolves the frame carried by whichever variant the theme's native
+  // picker currently has selected, and draws (or clears) the CSS
+  // border + mat ring around the result image accordingly — a Framing
+  // choice only sets frameColor/frameImageUrl when it's an actual
+  // physical frame (e.g. not a "No Frame" row), so this naturally
+  // shows the frame/mat only when a real framed choice is selected.
+  // Safe to call any time — a no-op before a result exists.
   updateFramePreview() {
     const wrap = this.querySelector(".aig-frame-wrap");
 
@@ -661,18 +709,33 @@ class AiArtGenerator extends HTMLElement {
       ? getSelectedVariantId(this.cartForm)
       : null;
 
-    const matched = this.sizeOptions.find(
+    const matched = this.variantOptions.find(
       (option) => option.variantId === selectedVariantId,
     );
 
+    const isFramed = Boolean(matched?.frameColor || matched?.frameImageUrl);
+
     if (picker) {
-      picker.hidden = !matched?.frameColor;
+      picker.hidden = !isFramed;
     }
 
-    if (!matched?.frameColor) {
-      wrap.classList.remove("aig-framed");
-      wrap.style.removeProperty("--aig-frame-color");
-      wrap.style.removeProperty("--aig-mat-color");
+    wrap.classList.remove("aig-framed", "aig-framed-image");
+    wrap.style.removeProperty("--aig-frame-color");
+    wrap.style.removeProperty("--aig-frame-image");
+    wrap.style.removeProperty("--aig-frame-thickness");
+    wrap.style.removeProperty("--aig-mat-color");
+
+    if (!isFramed) {
+      return;
+    }
+
+    if (matched.frameImageUrl) {
+      wrap.style.setProperty("--aig-frame-image", `url("${matched.frameImageUrl}")`);
+      wrap.style.setProperty(
+        "--aig-frame-thickness",
+        `${matched.borderThicknessPx || 24}px`,
+      );
+      wrap.classList.add("aig-framed-image");
 
       return;
     }
@@ -680,14 +743,20 @@ class AiArtGenerator extends HTMLElement {
     wrap.style.setProperty("--aig-frame-color", matched.frameColor);
     wrap.classList.add("aig-framed");
 
-    const mat = this.matColors.find(
-      (color) => color.label === this.selectedMatColor,
-    );
+    // First extra option carrying a color choice wins the mat ring —
+    // in practice there's normally just one (Mat color), but this
+    // stays correct if a merchant sets up more than one color-type
+    // extra option.
+    for (const option of this.extraOptions) {
+      const selectedLabel = this.selectedExtraChoices[option.label];
 
-    if (mat) {
-      wrap.style.setProperty("--aig-mat-color", mat.hexColor);
-    } else {
-      wrap.style.removeProperty("--aig-mat-color");
+      const choice = option.choices.find((entry) => entry.label === selectedLabel);
+
+      if (choice?.hexColor) {
+        wrap.style.setProperty("--aig-mat-color", choice.hexColor);
+
+        break;
+      }
     }
   }
 }

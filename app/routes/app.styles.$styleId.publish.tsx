@@ -48,13 +48,13 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   // Nothing to push to Shopify unless the Style itself (product fields,
   // tags, collections, etc.) or one of its assets (media selection) has
-  // changed since the last successful publish/update. Size/framing
-  // option changes (add/edit/delete/reorder — including a reorder
-  // alone, since Shopify's variant option values follow this same
-  // position order) touch Style.updatedAt directly (see touchStyle in
-  // style-size-options.server.ts / style-framing-options.server.ts),
-  // so they're already covered by the updatedAt check below without
-  // needing their own separate comparison here.
+  // changed since the last successful publish/update. Product option
+  // changes (add/edit/delete/reorder, on either an option or a choice —
+  // including a reorder alone, since Shopify's variant option values
+  // follow this same position order) touch Style.updatedAt directly
+  // (see touchStyle in style-options.server.ts), so they're already
+  // covered by the updatedAt check below without needing their own
+  // separate comparison here.
   const latestAssetChange = style.assets.reduce(
     (latest, asset) => Math.max(latest, asset.updatedAt.getTime()),
     0,
@@ -92,37 +92,47 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     hasPendingChanges,
 
-    // Fires whenever the set of active variant axes (Size, Framing) on
-    // the Product tab right now differs from what the last publish
+    // Fires whenever the set of active VARIANT-role options on the
+    // Product options tab right now differs from what the last publish
     // actually created in Shopify — adding, removing, or combining
     // axes always replaces every variant (the option set itself
     // changes), which can break an already-open cart/checkout
-    // referencing an old variant id. compositeKey is
-    // `${sizeOptionId ?? "none"}::${framingOptionId ?? "none"}`, so its
-    // two halves tell us which axes were active last time.
+    // referencing an old variant id. compositeKey joins
+    // `${optionId}:${choiceId}` per active axis, so the set of optionIds
+    // embedded in any one stored variant's key tells us which axes were
+    // active last time.
     needsSizeVariantMigration: (() => {
       if (style.status !== "PUBLISHED") {
         return false;
       }
 
-      const currentHasSizes = style.sizeOptions.length > 0;
-
-      const currentHasFraming = style.framingOptions.length > 0;
+      const currentAxisOptionIds = new Set(
+        style.options
+          .filter((option) => option.role === "VARIANT" && option.choices.length > 0)
+          .map((option) => option.id),
+      );
 
       const storedVariants = parseSizeVariants(style.productSettings);
 
-      const storedHasSizes = storedVariants.some(
-        (entry) => !entry.compositeKey.startsWith("none::"),
+      const firstKey = storedVariants[0]?.compositeKey ?? "none";
+
+      const storedAxisOptionIds = new Set(
+        firstKey === "none"
+          ? []
+          : firstKey.split("::").map((part) => part.split(":")[0]),
       );
 
-      const storedHasFraming = storedVariants.some(
-        (entry) => !entry.compositeKey.endsWith("::none"),
-      );
+      if (currentAxisOptionIds.size !== storedAxisOptionIds.size) {
+        return true;
+      }
 
-      return (
-        currentHasSizes !== storedHasSizes ||
-        currentHasFraming !== storedHasFraming
-      );
+      for (const id of currentAxisOptionIds) {
+        if (!storedAxisOptionIds.has(id)) {
+          return true;
+        }
+      }
+
+      return false;
     })(),
 
     published: url.searchParams.get("published") === "1",

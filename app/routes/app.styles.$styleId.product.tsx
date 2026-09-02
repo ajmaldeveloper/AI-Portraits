@@ -6,27 +6,6 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { ProductConfiguration } from "../components/styles/product-configuration";
 import {
-  createStyleFramingOption,
-  deleteStyleFramingOption,
-  reorderStyleFramingOptions,
-  type StyleFramingOptionInput,
-  updateStyleFramingOption,
-} from "../services/styles/style-framing-options.server";
-import {
-  createStyleMatColor,
-  deleteStyleMatColor,
-  reorderStyleMatColors,
-  type StyleMatColorInput,
-  updateStyleMatColor,
-} from "../services/styles/style-mat-colors.server";
-import {
-  createStyleSizeOption,
-  deleteStyleSizeOption,
-  reorderStyleSizeOptions,
-  type StyleSizeOptionInput,
-  updateStyleSizeOption,
-} from "../services/styles/style-size-options.server";
-import {
   requireStyleForShop,
   styleCanBeEdited,
   updateStyleDraft,
@@ -228,28 +207,13 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     collections: await resolveCollections(admin, collectionIds),
 
-    sizeOptions: style.sizeOptions.map((option) => ({
-      id: option.id,
-      label: option.label,
-      scalePercent: option.scalePercent,
-      price: option.price.toString(),
-      compareAtPrice: option.compareAtPrice?.toString() ?? "",
-    })),
-
-    framingOptions: style.framingOptions.map((option) => ({
-      id: option.id,
-      label: option.label,
-      priceDelta: option.priceDelta.toString(),
-      compareAtPriceDelta: option.compareAtPriceDelta?.toString() ?? "",
-      requiresShipping: option.requiresShipping,
-      frameColor: option.frameColor ?? "",
-    })),
-
-    matColors: style.matColors.map((color) => ({
-      id: color.id,
-      label: color.label,
-      hexColor: color.hexColor,
-    })),
+    // Whether the product has any priced options at all — drives
+    // whether ProductConfiguration shows the flat base price fields or
+    // defers to "Priced per option below" (see the Product options
+    // tab for the options themselves).
+    hasVariantOptions: style.options.some(
+      (option) => option.role === "VARIANT" && option.choices.length > 0,
+    ),
   };
 };
 
@@ -266,155 +230,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
   const formData = await request.formData();
 
-  const intent = formValue(formData, "intent") || "saveProduct";
-
   try {
-    if (intent === "addSize" || intent === "editSize") {
-      const input: StyleSizeOptionInput = {
-        label: formValue(formData, "label"),
-        scalePercent: Number(formValue(formData, "scalePercent")),
-        price: formValue(formData, "price"),
-        compareAtPrice: formValue(formData, "compareAtPrice") || null,
-      };
-
-      if (intent === "addSize") {
-        await createStyleSizeOption(session.shop, styleId, input);
-      } else {
-        const sizeOptionId = formValue(formData, "sizeOptionId");
-
-        await updateStyleSizeOption(session.shop, styleId, sizeOptionId, input);
-      }
-
-      return redirect(`/app/styles/${styleId}/product?notice=size-saved`);
-    }
-
-    if (intent === "deleteSize") {
-      const sizeOptionId = formValue(formData, "sizeOptionId");
-
-      await deleteStyleSizeOption(session.shop, styleId, sizeOptionId);
-
-      return redirect(`/app/styles/${styleId}/product?notice=size-deleted`);
-    }
-
-    if (intent === "reorderSizes") {
-      const orderedSizeOptionIds = formData
-        .getAll("sizeOptionId")
-        .filter(
-          (value): value is string =>
-            typeof value === "string" && value.length > 0,
-        );
-
-      if (orderedSizeOptionIds.length === 0) {
-        throw new Error("Size order is required.");
-      }
-
-      await reorderStyleSizeOptions(session.shop, styleId, orderedSizeOptionIds);
-
-      return redirect(`/app/styles/${styleId}/product?notice=sizes-reordered`);
-    }
-
-    if (intent === "addFraming" || intent === "editFraming") {
-      const input: StyleFramingOptionInput = {
-        label: formValue(formData, "label"),
-        priceDelta: formValue(formData, "priceDelta"),
-        compareAtPriceDelta: formValue(formData, "compareAtPriceDelta") || null,
-        requiresShipping: formData.has("requiresShipping"),
-        frameColor: formValue(formData, "frameColor") || null,
-      };
-
-      if (intent === "addFraming") {
-        await createStyleFramingOption(session.shop, styleId, input);
-      } else {
-        const framingOptionId = formValue(formData, "framingOptionId");
-
-        await updateStyleFramingOption(
-          session.shop,
-          styleId,
-          framingOptionId,
-          input,
-        );
-      }
-
-      return redirect(`/app/styles/${styleId}/product?notice=framing-saved`);
-    }
-
-    if (intent === "deleteFraming") {
-      const framingOptionId = formValue(formData, "framingOptionId");
-
-      await deleteStyleFramingOption(session.shop, styleId, framingOptionId);
-
-      return redirect(`/app/styles/${styleId}/product?notice=framing-deleted`);
-    }
-
-    if (intent === "reorderFraming") {
-      const orderedFramingOptionIds = formData
-        .getAll("framingOptionId")
-        .filter(
-          (value): value is string =>
-            typeof value === "string" && value.length > 0,
-        );
-
-      if (orderedFramingOptionIds.length === 0) {
-        throw new Error("Framing order is required.");
-      }
-
-      await reorderStyleFramingOptions(
-        session.shop,
-        styleId,
-        orderedFramingOptionIds,
-      );
-
-      return redirect(
-        `/app/styles/${styleId}/product?notice=framing-reordered`,
-      );
-    }
-
-    if (intent === "addMatColor" || intent === "editMatColor") {
-      const input: StyleMatColorInput = {
-        label: formValue(formData, "label"),
-        hexColor: formValue(formData, "hexColor"),
-      };
-
-      if (intent === "addMatColor") {
-        await createStyleMatColor(session.shop, styleId, input);
-      } else {
-        const matColorId = formValue(formData, "matColorId");
-
-        await updateStyleMatColor(session.shop, styleId, matColorId, input);
-      }
-
-      return redirect(`/app/styles/${styleId}/product?notice=mat-color-saved`);
-    }
-
-    if (intent === "deleteMatColor") {
-      const matColorId = formValue(formData, "matColorId");
-
-      await deleteStyleMatColor(session.shop, styleId, matColorId);
-
-      return redirect(
-        `/app/styles/${styleId}/product?notice=mat-color-deleted`,
-      );
-    }
-
-    if (intent === "reorderMatColors") {
-      const orderedMatColorIds = formData
-        .getAll("matColorId")
-        .filter(
-          (value): value is string =>
-            typeof value === "string" && value.length > 0,
-        );
-
-      if (orderedMatColorIds.length === 0) {
-        throw new Error("Mat color order is required.");
-      }
-
-      await reorderStyleMatColors(session.shop, styleId, orderedMatColorIds);
-
-      return redirect(
-        `/app/styles/${styleId}/product?notice=mat-colors-reordered`,
-      );
-    }
-
     const productTitle = formValue(formData, "productTitle");
 
     const productDescription = formValue(formData, "productDescription");
@@ -469,15 +285,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
 const notices: Record<string, string> = {
   "product-saved": "Product details saved",
-  "size-saved": "Size saved",
-  "size-deleted": "Size deleted",
-  "sizes-reordered": "Sizes reordered",
-  "framing-saved": "Framing option saved",
-  "framing-deleted": "Framing option deleted",
-  "framing-reordered": "Framing options reordered",
-  "mat-color-saved": "Mat color saved",
-  "mat-color-deleted": "Mat color deleted",
-  "mat-colors-reordered": "Mat colors reordered",
 };
 
 export default function StyleProduct() {
@@ -501,51 +308,6 @@ export default function StyleProduct() {
     if (!message) {
       return;
     }
-
-    // A successful add/edit/delete leaves its triggering modal open,
-    // showing stale content behind the toast. s-modal exposes
-    // hideOverlay() directly on the element, but on this tab (many
-    // s-modal instances at once — every Size/Framing row has its own
-    // Edit and Delete modal) it isn't reliably closing them. Simulating
-    // a click on each modal's own Cancel
-    // button reuses the exact interaction that's known to work (a
-    // human clicking Cancel), via a temporary invoker button rather
-    // than assuming a Cancel button exists inside every modal.
-    const closeOpenModals = () => {
-      document.querySelectorAll<HTMLElement>("s-modal").forEach((modal) => {
-        (modal as HTMLElement & { hideOverlay?: () => void }).hideOverlay?.();
-
-        const id = modal.id;
-
-        if (!id) {
-          return;
-        }
-
-        const invoker = document.createElement("s-button") as HTMLElement & {
-          commandFor?: string;
-          command?: string;
-        };
-
-        invoker.style.display = "none";
-
-        document.body.appendChild(invoker);
-
-        // Property AND attribute, since it's unclear which one this
-        // custom element's commandFor/command binding actually reads —
-        // matches how the working, hand-authored Cancel buttons behave
-        // (set as JSX props, which Preact may apply as either).
-        invoker.commandFor = id;
-        invoker.command = "--hide";
-        invoker.setAttribute("commandfor", id);
-        invoker.setAttribute("command", "--hide");
-
-        invoker.click();
-        invoker.remove();
-      });
-    };
-
-    closeOpenModals();
-    requestAnimationFrame(closeOpenModals);
 
     shopify.toast.show(message);
 
@@ -574,9 +336,7 @@ export default function StyleProduct() {
         compareAtPrice={data.compareAtPrice}
         tags={data.tags}
         collections={data.collections}
-        sizeOptions={data.sizeOptions}
-        framingOptions={data.framingOptions}
-        matColors={data.matColors}
+        hasVariantOptions={data.hasVariantOptions}
         editable={data.editable}
       />
 
@@ -590,7 +350,7 @@ export default function StyleProduct() {
         </s-button>
 
         <s-button
-          href={`/app/styles/${data.styleId}/media`}
+          href={`/app/styles/${data.styleId}/options`}
           variant="primary"
           loading={nextNav.loading}
           onClick={nextNav.onClick}

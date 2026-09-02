@@ -540,6 +540,55 @@ export async function uploadStyleProductImages(
  * reading a persisted "selected" flag: nothing about which box is
  * checked is ever written to the database until Remove is pressed.
  */
+// A single frame-texture image for an IMAGE_SWATCH-type StyleOption
+// choice — a separate, dedicated pool from the product photo gallery
+// (kind FRAME_TEXTURE, not PRODUCT_GENERATED/PRODUCT_SELECTED), so it
+// doesn't count against MAX_STYLE_PRODUCT_IMAGES and never shows up in
+// the Media tab's gallery. Lands immediately usable (no "select this
+// one" step, unlike a product photo) — the merchant picks the file
+// directly in the choice's own Add/Edit modal.
+export async function uploadStyleFrameTexture(
+  shop: string,
+  styleId: string,
+  file: { bytes: Uint8Array; mimeType: string },
+) {
+  const style = await requireStyleForShop(shop, styleId);
+
+  if (!styleMediaCanBeEdited(style)) {
+    throw new Error(
+      "Frame textures cannot be uploaded while this Style is locked.",
+    );
+  }
+
+  if (!ACCEPTED_UPLOAD_MIME_TYPES.has(file.mimeType)) {
+    throw new Error("Only PNG, JPEG, WEBP, or GIF images can be uploaded.");
+  }
+
+  if (file.bytes.byteLength === 0) {
+    throw new Error("The uploaded file is empty.");
+  }
+
+  if (file.bytes.byteLength > MAX_UPLOAD_BYTES) {
+    throw new Error("The uploaded image must be 10MB or smaller.");
+  }
+
+  const dimensions = pngDimensions(file.bytes);
+
+  return prisma.styleAsset.create({
+    data: {
+      styleId: style.id,
+      generationId: null,
+      kind: StyleAssetKind.FRAME_TEXTURE,
+      mimeType: file.mimeType,
+      width: dimensions.width,
+      height: dimensions.height,
+      altText: `Frame texture for ${style.name}`,
+      position: 0,
+      binaryData: toDatabaseBytes(file.bytes),
+    },
+  });
+}
+
 export async function deleteStyleProductImages(
   shop: string,
   styleId: string,
