@@ -77,7 +77,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       id: option.id,
       label: option.label,
       type: option.type,
-      role: option.role,
       axisRole: option.axisRole,
       choices: option.choices.map((choice) => ({
         id: choice.id,
@@ -117,7 +116,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       const input: StyleOptionInput = {
         label: formValue(formData, "label"),
         type: formValue(formData, "type"),
-        role: formValue(formData, "role"),
         axisRole: formValue(formData, "axisRole") || null,
       };
 

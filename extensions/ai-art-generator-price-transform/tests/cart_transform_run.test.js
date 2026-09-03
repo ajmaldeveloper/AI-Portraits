@@ -17,6 +17,9 @@ const STYLE_ID = "style-1";
 const SIZE_OPTION_ID = "opt-size";
 const FRAMING_OPTION_ID = "opt-framing";
 
+// Every option's priceDelta is purely additive on top of basePrice —
+// there is no "absolute price" axis. basePrice $40 + Size "large"
+// (+$49) + Framing "black" (+$50) = $139 total.
 const STYLE_WITH_SIZE_AND_FRAMING = {
   basePrice: "40.00",
   options: [
@@ -24,15 +27,15 @@ const STYLE_WITH_SIZE_AND_FRAMING = {
       id: SIZE_OPTION_ID,
       axisRole: "SIZE",
       choices: [
-        { id: "size-small", priceDelta: "40.00" },
-        { id: "size-large", priceDelta: "89.00" },
+        { id: "size-small", priceDelta: null },
+        { id: "size-large", priceDelta: "49.00" },
       ],
     },
     {
       id: FRAMING_OPTION_ID,
       axisRole: "FRAMING",
       choices: [
-        { id: "frame-none", priceDelta: "0.00", requiresShipping: false },
+        { id: "frame-none", priceDelta: null, requiresShipping: false },
         { id: "frame-black", priceDelta: "50.00", requiresShipping: true },
       ],
     },
@@ -104,9 +107,9 @@ describe("cartTransformRun", () => {
       }),
     );
 
-    // large size ($89) + black frame (+$50) = $139 total; the original
-    // line is already priced at $40 (its Shopify variant price), so the
-    // surcharge line must carry the remaining $99.
+    // base $40 + large size (+$49) + black frame (+$50) = $139 total;
+    // the original line is already priced at $40 (its Shopify variant
+    // price), so the surcharge line must carry the remaining $99.
     expect(result.operations).toEqual([
       {
         lineExpand: {
@@ -133,7 +136,7 @@ describe("cartTransformRun", () => {
     ]);
   });
 
-  test("no-frame choice omits the shipping line", () => {
+  test("no-frame, no-upcharge choices produce no operation at all", () => {
     const result = cartTransformRun(
       buildInput({
         lines: [
@@ -150,13 +153,14 @@ describe("cartTransformRun", () => {
       }),
     );
 
-    // small size ($40) + no frame (+$0) = $40 total, exactly matching
-    // the line's already-charged price, so no operation is needed at
-    // all — nothing to adjust and no shipping carrier line to add.
+    // base $40 + small size (+$0) + no frame (+$0) = $40 total,
+    // exactly matching the line's already-charged price, so no
+    // operation is needed — nothing to adjust and no shipping carrier
+    // line to add.
     expect(result.operations).toEqual([]);
   });
 
-  test("a smaller size than the base price produces a negative surcharge", () => {
+  test("an option with a negative price delta produces a negative surcharge", () => {
     const result = cartTransformRun(
       buildInput({
         pricingShards: [
@@ -167,7 +171,7 @@ describe("cartTransformRun", () => {
                 {
                   id: SIZE_OPTION_ID,
                   axisRole: "SIZE",
-                  choices: [{ id: "size-tiny", priceDelta: "25.00" }],
+                  choices: [{ id: "size-tiny", priceDelta: "-15.00" }],
                 },
               ],
             },

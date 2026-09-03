@@ -12,11 +12,6 @@ export const OPTION_TYPES = [
   { value: "IMAGE_SWATCH", label: "Image swatch" },
 ] as const;
 
-export const OPTION_ROLES = [
-  { value: "VARIANT", label: "Variant" },
-  { value: "EXTRA", label: "Extra option" },
-] as const;
-
 export const AXIS_ROLES = [
   { value: "", label: "None" },
   { value: "SIZE", label: "Size" },
@@ -42,7 +37,6 @@ export type OptionView = {
   id: string;
   label: string;
   type: string;
-  role: string;
   axisRole: string | null;
   choices: OptionChoiceView[];
 };
@@ -61,14 +55,12 @@ function axisRoleLabel(axisRole: string | null) {
 type OptionFormState = {
   label: string;
   type: string;
-  role: string;
   axisRole: string;
 };
 
 const blankOptionValues: OptionFormState = {
   label: "",
   type: "TEXT",
-  role: "VARIANT",
   axisRole: "",
 };
 
@@ -76,7 +68,6 @@ function optionValuesOf(option: OptionView): OptionFormState {
   return {
     label: option.label,
     type: option.type,
-    role: option.role,
     axisRole: option.axisRole ?? "",
   };
 }
@@ -140,50 +131,26 @@ function OptionFormFields({
       </s-select>
 
       <s-select
-        label="Role"
-        name="role"
-        value={values.role}
-        details="Variant options are priced and charged at checkout. Extra options (like Mat color) are free add-ons."
-        onChange={(event: Event) => {
-          const role = eventValue(event);
-
-          onChange({
-            role,
-            // An Extra-role option can never drive Size/Framing.
-            axisRole: role === "VARIANT" ? values.axisRole : "",
-          });
-        }}
+        label="Axis"
+        name="axisRole"
+        value={values.axisRole}
+        onChange={(event: Event) => onChange({ axisRole: eventValue(event) })}
+        details="At most one option can drive Size, and at most one can drive Framing. Any option's choices can optionally carry a price, regardless of axis."
       >
-        {OPTION_ROLES.map((entry) => (
-          <s-option key={entry.value} value={entry.value}>
+        {AXIS_ROLES.map((entry) => (
+          <s-option
+            key={entry.value}
+            value={entry.value}
+            disabled={
+              Boolean(entry.value) &&
+              entry.value !== values.axisRole &&
+              takenAxisRoles.has(entry.value)
+            }
+          >
             {entry.label}
           </s-option>
         ))}
       </s-select>
-
-      {values.role === "VARIANT" ? (
-        <s-select
-          label="Axis"
-          name="axisRole"
-          value={values.axisRole}
-          onChange={(event: Event) => onChange({ axisRole: eventValue(event) })}
-          details="At most one option can drive Size, and at most one can drive Framing."
-        >
-          {AXIS_ROLES.map((entry) => (
-            <s-option
-              key={entry.value}
-              value={entry.value}
-              disabled={
-                Boolean(entry.value) &&
-                entry.value !== values.axisRole &&
-                takenAxisRoles.has(entry.value)
-              }
-            >
-              {entry.label}
-            </s-option>
-          ))}
-        </s-select>
-      ) : null}
     </s-stack>
   );
 }
@@ -290,7 +257,6 @@ function EditOptionModal({
   const isDirty =
     values.label !== initialValues.label ||
     values.type !== initialValues.type ||
-    values.role !== initialValues.role ||
     values.axisRole !== initialValues.axisRole;
 
   return (
@@ -369,7 +335,7 @@ type ChoiceFormState = {
 
 const blankChoiceValues: ChoiceFormState = {
   label: "",
-  priceDelta: "0",
+  priceDelta: "",
   compareAtPriceDelta: "",
   requiresShipping: false,
   scalePercent: "100",
@@ -420,10 +386,13 @@ function validateChoiceForm(
     errors.label = "A choice with this name already exists.";
   }
 
-  if (option.role === "VARIANT") {
+  // Price is always optional — a blank value just means "no charge,"
+  // not a validation error — only the format is checked when
+  // something was actually entered.
+  if (values.priceDelta.trim() !== "") {
     const price = Number(values.priceDelta);
 
-    if (values.priceDelta.trim() === "" || !Number.isFinite(price)) {
+    if (!Number.isFinite(price)) {
       errors.priceDelta = "Enter a valid price adjustment.";
     }
   }
@@ -513,33 +482,31 @@ function ChoiceFormFields({
         error={errors.label}
       />
 
-      {option.role === "VARIANT" ? (
-        <s-query-container>
-          <s-grid gridTemplateColumns="@container (inline-size > 360px) 1fr 1fr, 1fr" gap="base">
-            <s-number-field
-              label="Price adjustment"
-              name="priceDelta"
-              value={values.priceDelta}
-              onInput={(event: Event) => onChange({ priceDelta: eventValue(event) })}
-              step={0.01}
-              prefix="$"
-              autocomplete="off"
-              error={errors.priceDelta}
-              details={option.axisRole === "SIZE" ? "Absolute price for this size." : "Added on top of the size price."}
-            />
+      <s-query-container>
+        <s-grid gridTemplateColumns="@container (inline-size > 360px) 1fr 1fr, 1fr" gap="base">
+          <s-number-field
+            label="Price adjustment"
+            name="priceDelta"
+            value={values.priceDelta}
+            onInput={(event: Event) => onChange({ priceDelta: eventValue(event) })}
+            step={0.01}
+            prefix="$"
+            autocomplete="off"
+            error={errors.priceDelta}
+            details="Added on top of the base price. Leave blank for no charge."
+          />
 
-            <s-number-field
-              label="Compare-at adjustment"
-              name="compareAtPriceDelta"
-              value={values.compareAtPriceDelta}
-              onInput={(event: Event) => onChange({ compareAtPriceDelta: eventValue(event) })}
-              step={0.01}
-              prefix="$"
-              autocomplete="off"
-            />
-          </s-grid>
-        </s-query-container>
-      ) : null}
+          <s-number-field
+            label="Compare-at adjustment"
+            name="compareAtPriceDelta"
+            value={values.compareAtPriceDelta}
+            onInput={(event: Event) => onChange({ compareAtPriceDelta: eventValue(event) })}
+            step={0.01}
+            prefix="$"
+            autocomplete="off"
+          />
+        </s-grid>
+      </s-query-container>
 
       {option.axisRole === "FRAMING" ? (
         <s-checkbox
@@ -945,7 +912,7 @@ function SortableChoiceRow({
 
             <s-text type="strong">{choice.label}</s-text>
 
-            {option.role === "VARIANT" ? (
+            {choice.priceDelta !== "" ? (
               <s-badge tone="neutral">
                 {Number(choice.priceDelta) >= 0 ? "+" : ""}${choice.priceDelta}
               </s-badge>
@@ -1173,9 +1140,6 @@ function SortableOptionRow({
             <s-stack direction="inline" gap="small-200" alignItems="center">
               <s-text type="strong">{option.label}</s-text>
               <s-badge tone="neutral">{typeLabel(option.type)}</s-badge>
-              <s-badge tone={option.role === "VARIANT" ? "info" : "neutral"}>
-                {option.role === "VARIANT" ? "Variant" : "Extra"}
-              </s-badge>
               {axisRoleLabel(option.axisRole) ? <s-badge tone="success">{axisRoleLabel(option.axisRole)}</s-badge> : null}
             </s-stack>
 

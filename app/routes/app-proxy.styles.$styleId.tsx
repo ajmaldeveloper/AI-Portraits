@@ -78,17 +78,18 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         options: stringArray(field.options),
       })),
 
-      // Every Product option this Style has, priced or not — the
-      // storefront extension renders ALL of these itself (the Shopify
-      // product behind this Style is always a plain single-variant
-      // product; there's no native variant picker to lean on). role
-      // "VARIANT" options carry pricing (priceDelta/compareAtPriceDelta)
-      // that the storefront sums into a running total, matching what
-      // the ai-art-generator-price-transform Cart Transform Function
-      // will actually charge at checkout — see
+      // Every Product option this Style has — the storefront extension
+      // renders ALL of these itself (the Shopify product behind this
+      // Style is always a plain single-variant product; there's no
+      // native variant picker to lean on). Any option's choices may
+      // carry pricing (priceDelta/compareAtPriceDelta, null = no
+      // charge) that the storefront sums into a running total,
+      // matching what the ai-art-generator-price-transform Cart
+      // Transform Function will actually charge at checkout — see
       // style-pricing-sync.server.ts, the single source of truth this
       // mirrors. axisRole "SIZE" additionally drives which resolution
-      // to request for the result image (scalePercent); axisRole
+      // to request for the result image (scalePercent) and holds each
+      // size's own absolute price rather than a delta; axisRole
       // "FRAMING" additionally drives the visual frame preview
       // (hexColor/frameImageUrl/thickness/mat/radius) and whether the
       // order needs physical shipping.
@@ -96,7 +97,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         id: option.id,
         label: option.label,
         type: option.type,
-        role: option.role,
         axisRole: option.axisRole,
         choices: option.choices.map((choice) => ({
           id: choice.id,

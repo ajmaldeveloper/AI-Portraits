@@ -13,16 +13,12 @@ import { requireStyleForShop, styleCanBeEdited } from "./style.server";
 export const STYLE_OPTION_TYPES = ["TEXT", "COLOR_SWATCH", "IMAGE_SWATCH"] as const;
 export type StyleOptionTypeValue = (typeof STYLE_OPTION_TYPES)[number];
 
-export const STYLE_OPTION_ROLES = ["VARIANT", "EXTRA"] as const;
-export type StyleOptionRoleValue = (typeof STYLE_OPTION_ROLES)[number];
-
 export const STYLE_OPTION_AXIS_ROLES = ["SIZE", "FRAMING"] as const;
 export type StyleOptionAxisRoleValue = (typeof STYLE_OPTION_AXIS_ROLES)[number];
 
 export type StyleOptionInput = {
   label: string;
   type: string;
-  role: string;
   axisRole: string | null;
 };
 
@@ -99,15 +95,7 @@ function validateOptionInput(input: StyleOptionInput) {
     throw new Error("Choose a valid option type.");
   }
 
-  if (!STYLE_OPTION_ROLES.includes(input.role as StyleOptionRoleValue)) {
-    throw new Error("Choose a valid option role.");
-  }
-
   const axisRole = input.axisRole?.trim() || null;
-
-  if (axisRole && input.role !== "VARIANT") {
-    throw new Error("Only a Variant-role option can drive Size or Framing.");
-  }
 
   if (
     axisRole &&
@@ -119,7 +107,6 @@ function validateOptionInput(input: StyleOptionInput) {
   return {
     label,
     type: input.type as StyleOptionTypeValue,
-    role: input.role as StyleOptionRoleValue,
     axisRole: axisRole as StyleOptionAxisRoleValue | null,
   };
 }
@@ -193,7 +180,6 @@ export async function createStyleOption(
       styleId,
       label: normalized.label,
       type: normalized.type,
-      role: normalized.role,
       axisRole: normalized.axisRole,
       position: (lastOption?.position ?? -1) + 1,
     },
@@ -219,7 +205,6 @@ export async function updateStyleOption(
     data: {
       label: normalized.label,
       type: normalized.type,
-      role: normalized.role,
       axisRole: normalized.axisRole,
     },
   });
@@ -292,38 +277,39 @@ async function requireOption(styleId: string, optionId: string) {
 }
 
 async function validateChoiceInput(
-  option: { id: string; styleId: string; type: string; role: string; axisRole: string | null },
+  option: { id: string; styleId: string; type: string; axisRole: string | null },
   input: StyleOptionChoiceInput,
 ) {
   const label = requiredText(input.label, "Choice name");
 
-  // Price only means anything for a VARIANT-role option — forced to
-  // null otherwise, regardless of what was submitted, so an EXTRA
-  // option can never silently affect price.
+  // Every option's choices may optionally carry a price, always as a
+  // delta added on top of the Style's flat base price — null means
+  // this choice never affects price (e.g. most Mat color choices, or
+  // a Size choice with no upcharge).
   let priceDelta: string | null = null;
   let compareAtPriceDelta: string | null = null;
 
-  if (option.role === "VARIANT") {
-    const price = input.priceDelta?.trim() ?? "";
+  const priceRaw = input.priceDelta?.trim() ?? "";
 
-    if (!decimalPattern.test(price)) {
+  if (priceRaw) {
+    if (!decimalPattern.test(priceRaw)) {
       throw new Error(
         "Price adjustment must be a valid number with up to two decimal places.",
       );
     }
 
-    priceDelta = price;
-
-    const compareAt = input.compareAtPriceDelta?.trim() || null;
-
-    if (compareAt && !decimalPattern.test(compareAt)) {
-      throw new Error(
-        "Compare-at adjustment must be a valid number with up to two decimal places.",
-      );
-    }
-
-    compareAtPriceDelta = compareAt;
+    priceDelta = priceRaw;
   }
+
+  const compareAt = input.compareAtPriceDelta?.trim() || null;
+
+  if (compareAt && !decimalPattern.test(compareAt)) {
+    throw new Error(
+      "Compare-at adjustment must be a valid number with up to two decimal places.",
+    );
+  }
+
+  compareAtPriceDelta = compareAt;
 
   // Shipping only means anything for the one Framing-axis option.
   const requiresShipping =

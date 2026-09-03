@@ -17,9 +17,6 @@ type ProductConfigurationProps = {
   compareAtPrice: string;
   tags: string[];
   collections: CollectionSummary[];
-  // Whether the style has any priced (role: VARIANT) options with
-  // choices at all — see the Product options tab for those themselves.
-  hasVariantOptions: boolean;
   editable: boolean;
 };
 
@@ -30,7 +27,6 @@ export function ProductConfiguration({
   compareAtPrice: initialCompareAtPrice,
   tags: initialTags,
   collections: initialCollections,
-  hasVariantOptions,
   editable,
 }: ProductConfigurationProps) {
   const shopify = useAppBridge();
@@ -166,43 +162,38 @@ export function ProductConfiguration({
             autocomplete="off"
           />
 
-          {hasVariantOptions ? (
-            <s-text color="subdued">
-              Priced per option below (see the Product options tab).
-            </s-text>
-          ) : (
-            <s-query-container>
-              <s-grid
-                gridTemplateColumns="@container (inline-size > 480px) 1fr 1fr, 1fr"
-                gap="base"
-              >
-                <s-number-field
-                  label="Price"
-                  value={basePrice}
-                  onInput={(event: Event) => setBasePrice(eventValue(event))}
-                  min={0}
-                  step={0.01}
-                  prefix="$"
-                  disabled={!editable}
-                  autocomplete="off"
-                />
+          <s-query-container>
+            <s-grid
+              gridTemplateColumns="@container (inline-size > 480px) 1fr 1fr, 1fr"
+              gap="base"
+            >
+              <s-number-field
+                label="Base price"
+                value={basePrice}
+                onInput={(event: Event) => setBasePrice(eventValue(event))}
+                min={0}
+                step={0.01}
+                prefix="$"
+                disabled={!editable}
+                autocomplete="off"
+                details="The starting price shown to customers. Any Product option they pick (Size, Framing, etc.) adds to this."
+              />
 
-                <s-number-field
-                  label="Compare-at price"
-                  value={compareAtPrice}
-                  onInput={(event: Event) =>
-                    setCompareAtPrice(eventValue(event))
-                  }
-                  min={0}
-                  step={0.01}
-                  prefix="$"
-                  disabled={!editable}
-                  autocomplete="off"
-                  details="Optional. Shown crossed out next to the price."
-                />
-              </s-grid>
-            </s-query-container>
-          )}
+              <s-number-field
+                label="Compare-at price"
+                value={compareAtPrice}
+                onInput={(event: Event) =>
+                  setCompareAtPrice(eventValue(event))
+                }
+                min={0}
+                step={0.01}
+                prefix="$"
+                disabled={!editable}
+                autocomplete="off"
+                details="Optional. Shown crossed out next to the price."
+              />
+            </s-grid>
+          </s-query-container>
         </s-stack>
       </s-section>
 

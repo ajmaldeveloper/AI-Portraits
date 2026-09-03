@@ -41,36 +41,18 @@ function parseSelections(raw) {
 }
 
 // Every priced choice's own priceDelta is additive on top of the base
-// price — except the one SIZE-axis option, whose choice's priceDelta
-// instead REPLACES the base price outright (it holds each size's own
-// absolute price, not an increment — the same convention the admin
-// editor and style-publish.server.ts's price computation already use).
-// Returns null when a required selection is missing/invalid, so the
-// caller can skip pricing this line rather than charge a wrong amount.
+// price — every option (including the axisRole SIZE one) is purely
+// additive; there's no special-cased "absolute" axis. An option with
+// no matching/selected choice simply contributes nothing, rather than
+// aborting pricing for the whole line.
 function computeStyleTotal(style, selections) {
   const options = Array.isArray(style.options) ? style.options : [];
-  const sizeOption = options.find((option) => option.axisRole === "SIZE");
 
   let total = numberOrNull(style.basePrice) ?? 0;
-
-  if (sizeOption) {
-    const choiceId = selections[sizeOption.id];
-    const choice = sizeOption.choices.find((item) => item.id === choiceId);
-
-    if (!choice) {
-      return null;
-    }
-
-    total = numberOrNull(choice.priceDelta) ?? 0;
-  }
 
   let framingRequiresShipping = false;
 
   for (const option of options) {
-    if (option === sizeOption) {
-      continue;
-    }
-
     const choiceId = selections[option.id];
 
     if (!choiceId) {
@@ -163,10 +145,6 @@ export function cartTransformRun(input) {
     }
 
     const computed = computeStyleTotal(style, selections);
-
-    if (!computed) {
-      continue;
-    }
 
     const basePrice = numberOrNull(line.cost.amountPerQuantity.amount);
 

@@ -85,7 +85,6 @@ async function buildTrustedPricingConfig(shop: string) {
       id: true,
       basePrice: true,
       options: {
-        where: { role: "VARIANT" },
         orderBy: { position: "asc" },
         select: {
           id: true,

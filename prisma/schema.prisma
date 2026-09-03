@@ -51,11 +51,6 @@ enum StyleOptionType {
   IMAGE_SWATCH
 }
 
-enum StyleOptionRole {
-  VARIANT
-  EXTRA
-}
-
 enum StyleOptionAxisRole {
   SIZE
   FRAMING
@@ -277,25 +272,26 @@ model ShopGenerationDefaults {
 
 // Generalized, merchant-configurable product option — edited on its
 // own "Product options" tab. Replaces what used to be three hardcoded
-// concepts (Sizes, Framing, Mat colors) with one flexible system:
+// concepts (Sizes, Framing, Mat colors) with one flexible system.
+// Never modeled as a real Shopify product option/variant — every
+// option's pricing (if any) is applied at checkout by the
+// ai-art-generator-price-transform Cart Transform Function instead
+// (see style-pricing-sync.server.ts). Any option's choices may
+// optionally carry a price (StyleOptionChoice.priceDelta) — there is
+// no longer a role distinguishing "priced" from "free" options; a
+// merchant just leaves priceDelta blank on a choice that shouldn't
+// affect price.
 //
-// - role: VARIANT choices become real Shopify variants at publish
-//   time (priced, via style-publish.server.ts's cartesian-product
-//   logic — this app deliberately keeps using native Shopify variants
-//   for pricing rather than an app-managed cart-transform mechanism).
-//   role: EXTRA choices never touch Shopify — purely visual/app-owned,
-//   price-neutral, independent of whichever variant is selected (e.g.
-//   Mat color).
-// - axisRole is meaningful only for role: VARIANT options, and at
-//   most one option per style may hold each value: SIZE marks the one
-//   axis whose choices carry scalePercent (drives image-resolution
-//   scaling at serve time — see media.style-assets.$assetId.ts) and
-//   must keep at least one choice at 100%; FRAMING marks the one axis
-//   whose choices may carry requiresShipping/a visual frame (color or
-//   uploaded image) — the only axis that can make a variant a real
-//   physical product. A style can still add further plain VARIANT
-//   axes (axisRole null) — just price, no special meaning — beyond
-//   these two.
+// - axisRole is optional, and at most one option per style may hold
+//   each value: SIZE marks the one axis whose choices carry
+//   scalePercent (drives image-resolution scaling at serve time — see
+//   media.style-assets.$assetId.ts) and must keep at least one choice
+//   at 100%; its priceDelta is each size's own absolute price, not a
+//   delta. FRAMING marks the one axis whose choices may carry
+//   requiresShipping/a visual frame (color or uploaded image) — the
+//   only axis that can make an order require physical shipping. Every
+//   other option (axisRole null) — including one with priced
+//   choices — is just a plain add-on, e.g. Mat color.
 // - type controls how a choice is edited/rendered: TEXT (plain
 //   labeled buttons), COLOR_SWATCH (hex color), IMAGE_SWATCH
 //   (merchant-uploaded texture, rendered via CSS border-image).
@@ -306,7 +302,6 @@ model StyleOption {
 
   label    String
   type     StyleOptionType
-  role     StyleOptionRole
   axisRole StyleOptionAxisRole?
   position Int                  @default(0)
 
@@ -325,14 +320,15 @@ model StyleOption {
 }
 
 // One selectable value under a StyleOption. Which fields are
-// meaningful depends entirely on the parent option's type/role/
-// axisRole (see StyleOption's own comment) — e.g. priceDelta only
-// matters when the parent's role is VARIANT, hexColor only when its
-// type is COLOR_SWATCH. id is the stable key
-// Style.productSettings.sizeVariants matches against on republish, so
-// renaming a label later renames the existing Shopify variant instead
-// of deleting and recreating it (same reasoning as the old
-// StyleSizeOption/StyleFramingOption).
+// meaningful depends entirely on the parent option's type/axisRole
+// (see StyleOption's own comment) — e.g. hexColor only when the
+// parent's type is COLOR_SWATCH. priceDelta is always optional
+// (null = this choice never affects price) except on the one
+// axisRole SIZE option, where it's required and holds that size's own
+// absolute price rather than a delta. id is what the Cart Transform
+// Function's pricing config keys selections against (see
+// style-pricing-sync.server.ts), so renaming a choice's label later
+// doesn't lose track of its price.
 model StyleOptionChoice {
   id String @id @default(cuid())
 

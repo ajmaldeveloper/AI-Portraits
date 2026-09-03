@@ -31,8 +31,8 @@ class AiArtGenerator extends HTMLElement {
 
     this.basePrice = "0";
 
-    // Every Product option on this Style (both role: VARIANT, which is
-    // priced, and role: EXTRA, which isn't) — see
+    // Every Product option on this Style — any option's choices may
+    // optionally carry a price (priceDelta) — see
     // app-proxy.styles.$styleId.tsx for the exact shape.
     this.options = [];
 
@@ -118,8 +118,11 @@ class AiArtGenerator extends HTMLElement {
       // .js) to compute the real surcharge and, if the Framing choice
       // needs it, add the shipping-carrier line — this is the only
       // place pricing actually gets applied; everything shown in this
-      // widget is a preview of the same math.
-      if (this.hasPricedOptions()) {
+      // widget is a preview of the same math. Set whenever any option
+      // is configured at all, not just priced ones — a $0 Framing
+      // choice still needs to reach the Function so it can add the
+      // shipping-carrier line.
+      if (this.hasConfiguredOptions()) {
         event.formData.set("properties[_aig_option_set]", this.styleId);
 
         event.formData.set(
@@ -309,12 +312,12 @@ class AiArtGenerator extends HTMLElement {
     return option ? this.choiceFor(option) : null;
   }
 
-  // First EXTRA-role, color-carrying option's selected choice — in
+  // First color-carrying option OTHER than Framing itself — in
   // practice there's normally just one (Mat color), but this stays
   // correct if a merchant sets up more than one.
   selectedMatColorChoice() {
     for (const option of this.options) {
-      if (option.role !== "EXTRA" || option.type !== "COLOR_SWATCH") {
+      if (option.axisRole === "FRAMING" || option.type !== "COLOR_SWATCH") {
         continue;
       }
 
@@ -328,35 +331,20 @@ class AiArtGenerator extends HTMLElement {
     return null;
   }
 
-  hasPricedOptions() {
-    return this.options.some(
-      (option) => option.role === "VARIANT" && option.choices.length > 0,
-    );
+  hasConfiguredOptions() {
+    return this.options.some((option) => option.choices.length > 0);
   }
 
   // Purely a preview of what the Cart Transform Function will actually
   // charge at checkout (see that Function's own computeStyleTotal,
   // which this mirrors) — never the value actually billed, so a
   // mismatch here can only ever under/over-represent the price shown,
-  // not the price paid.
+  // not the price paid. Every option's selected choice is a delta on
+  // top of the base price — there's no "absolute price" axis.
   computeTotal() {
-    const sizeOption = this.sizeOption();
-
     let total = Number(this.basePrice) || 0;
 
-    if (sizeOption) {
-      const choice = this.choiceFor(sizeOption);
-
-      if (choice && choice.priceDelta !== null) {
-        total = Number(choice.priceDelta) || 0;
-      }
-    }
-
     for (const option of this.options) {
-      if (option.role !== "VARIANT" || option === sizeOption) {
-        continue;
-      }
-
       const choice = this.choiceFor(option);
 
       if (choice && choice.priceDelta !== null) {
@@ -396,8 +384,15 @@ class AiArtGenerator extends HTMLElement {
       )
       .join("");
 
+    // Options and their running total are shown up front — before the
+    // customer has even uploaded a photo — so the price is visible the
+    // whole time, not just once a result exists. The same options
+    // markup (and this.selectedChoices state) carries through into
+    // renderResult() once generation finishes, where the frame preview
+    // also becomes available.
     this.innerHTML = `
       ${headingHtml}
+      ${this.renderOptionsHtml()}
       <form class="aig-form" novalidate>
         ${fieldsHtml}
         <button type="submit" class="aig-submit">${escapeHtml(this.buttonLabel)}</button>
@@ -415,6 +410,9 @@ class AiArtGenerator extends HTMLElement {
 
       this.submitForm(form, imageField, nonImageFields);
     });
+
+    this.wireOptionChips();
+    this.updatePriceSummary();
   }
 
   wireDropzone(fieldId) {
@@ -683,12 +681,9 @@ class AiArtGenerator extends HTMLElement {
     this.updatePriceSummary();
   }
 
-  // Rendered below the result image — one group per Product option that
-  // has any choices at all. role: VARIANT groups (Size, Framing, ...)
-  // always show; role: EXTRA groups (Mat color) are hidden/shown by
-  // updateFramePreview depending on whether the current Framing
-  // selection is actually a physical frame, matching the earlier
-  // mat-color-only-when-framed behavior.
+  // Rendered below the result image — one group per Product option
+  // that has any choices at all, always shown (a customer can preview
+  // any option, including Mat color, before committing to a frame).
   renderOptionsHtml() {
     const groups = this.options.filter((option) => option.choices.length > 0);
 
@@ -698,32 +693,28 @@ class AiArtGenerator extends HTMLElement {
 
     const groupsHtml = groups.map((option) => this.renderOptionGroupHtml(option)).join("");
 
-    const priceSummaryHtml = this.hasPricedOptions()
-      ? `
-        <div class="aig-price-summary">
-          <span>Total</span>
-          <span class="aig-price-total" data-aig-price-total></span>
-        </div>
-      `
-      : "";
+    // Shown whenever there's at least one option to choose from — even
+    // one currently priced at $0 — so the total is visible from the
+    // start and stays visible as selections (and the price) change.
+    const priceSummaryHtml = `
+      <div class="aig-price-summary">
+        <span>Total</span>
+        <span class="aig-price-total" data-aig-price-total></span>
+      </div>
+    `;
 
     return `<div class="aig-options">${groupsHtml}${priceSummaryHtml}</div>`;
   }
 
   renderOptionGroupHtml(option) {
-    const isSizeAxis = option.axisRole === "SIZE";
-
     const chipsHtml = option.choices
-      .map((choice) => this.renderChoiceChipHtml(option, choice, isSizeAxis))
+      .map((choice) => this.renderChoiceChipHtml(option, choice))
       .join("");
-
-    const hideForNow = option.role === "EXTRA";
 
     return `
       <div
         class="aig-option-group"
         data-aig-option-group="${escapeHtml(option.id)}"
-        ${hideForNow ? "hidden" : ""}
       >
         <span class="aig-mat-picker-label">${escapeHtml(option.label)}</span>
         <div class="aig-choice-chip-group">${chipsHtml}</div>
@@ -731,10 +722,10 @@ class AiArtGenerator extends HTMLElement {
     `;
   }
 
-  renderChoiceChipHtml(option, choice, isSizeAxis) {
+  renderChoiceChipHtml(option, choice) {
     const selected = this.selectedChoices[option.id] === choice.id;
 
-    const priceHtml = choicePriceHtml(option, choice, isSizeAxis);
+    const priceHtml = choicePriceHtml(choice);
 
     let swatchHtml = "";
 
@@ -807,18 +798,6 @@ class AiArtGenerator extends HTMLElement {
     const isFramed = Boolean(
       framingChoice?.hexColor || framingChoice?.frameImageUrl,
     );
-
-    // Any EXTRA-role option group (e.g. Mat color) only makes sense
-    // once a real frame is selected.
-    this.querySelectorAll("[data-aig-option-group]").forEach((group) => {
-      const option = this.options.find(
-        (item) => item.id === group.dataset.aigOptionGroup,
-      );
-
-      if (option?.role === "EXTRA") {
-        group.hidden = !isFramed;
-      }
-    });
 
     wrap.classList.remove("aig-framed", "aig-framed-image");
     wrap.style.removeProperty("--aig-frame-color");
@@ -902,21 +881,12 @@ function formatDelta(value) {
 // same convention the admin editor and the Cart Transform Function's
 // own pricing both use); every other priced option's priceDelta is a
 // delta on top of that.
-function choicePriceHtml(option, choice, isSizeAxis) {
-  if (option.role !== "VARIANT" || choice.priceDelta === null) {
+// A choice's priceDelta (null = no charge) is always a delta on top
+// of the base price — there's no "absolute price" axis, even for
+// Size.
+function choicePriceHtml(choice) {
+  if (choice.priceDelta === null) {
     return "";
-  }
-
-  const compareAt = choice.compareAtPriceDelta;
-
-  if (isSizeAxis) {
-    const price = formatMoney(choice.priceDelta);
-
-    if (compareAt !== null && Number(compareAt) > Number(choice.priceDelta)) {
-      return `<s class="aig-choice-chip-compare">${formatMoney(compareAt)}</s> ${price}`;
-    }
-
-    return price;
   }
 
   const deltaText = formatDelta(choice.priceDelta);
@@ -924,6 +894,8 @@ function choicePriceHtml(option, choice, isSizeAxis) {
   if (!deltaText) {
     return "";
   }
+
+  const compareAt = choice.compareAtPriceDelta;
 
   if (compareAt !== null && Number(compareAt) !== Number(choice.priceDelta)) {
     const compareText = formatDelta(compareAt);

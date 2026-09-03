@@ -206,14 +206,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     tags: stringArray(style.tags),
 
     collections: await resolveCollections(admin, collectionIds),
-
-    // Whether the product has any priced options at all — drives
-    // whether ProductConfiguration shows the flat base price fields or
-    // defers to "Priced per option below" (see the Product options
-    // tab for the options themselves).
-    hasVariantOptions: style.options.some(
-      (option) => option.role === "VARIANT" && option.choices.length > 0,
-    ),
   };
 };
 
@@ -336,7 +328,6 @@ export default function StyleProduct() {
         compareAtPrice={data.compareAtPrice}
         tags={data.tags}
         collections={data.collections}
-        hasVariantOptions={data.hasVariantOptions}
         editable={data.editable}
       />
 
