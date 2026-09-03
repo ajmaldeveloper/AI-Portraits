@@ -12,8 +12,13 @@ export const OPTION_TYPES = [
   { value: "IMAGE_SWATCH", label: "Image swatch" },
 ] as const;
 
+// A real (non-empty) sentinel for "no axis" — s-select/s-option don't
+// reliably submit an option whose value is the empty string, so this
+// avoids that rather than depending on it.
+export const AXIS_ROLE_NONE = "NONE";
+
 export const AXIS_ROLES = [
-  { value: "", label: "None" },
+  { value: AXIS_ROLE_NONE, label: "None" },
   { value: "SIZE", label: "Size" },
   { value: "FRAMING", label: "Framing" },
 ] as const;
@@ -61,14 +66,14 @@ type OptionFormState = {
 const blankOptionValues: OptionFormState = {
   label: "",
   type: "TEXT",
-  axisRole: "",
+  axisRole: AXIS_ROLE_NONE,
 };
 
 function optionValuesOf(option: OptionView): OptionFormState {
   return {
     label: option.label,
     type: option.type,
-    axisRole: option.axisRole ?? "",
+    axisRole: option.axisRole ?? AXIS_ROLE_NONE,
   };
 }
 
@@ -142,7 +147,7 @@ function OptionFormFields({
             key={entry.value}
             value={entry.value}
             disabled={
-              Boolean(entry.value) &&
+              entry.value !== AXIS_ROLE_NONE &&
               entry.value !== values.axisRole &&
               takenAxisRoles.has(entry.value)
             }

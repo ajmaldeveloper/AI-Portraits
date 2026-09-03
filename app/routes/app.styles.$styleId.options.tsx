@@ -4,7 +4,7 @@ import { useActionData, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
-import { StyleOptionsEditor } from "../components/styles/style-options-editor";
+import { AXIS_ROLE_NONE, StyleOptionsEditor } from "../components/styles/style-options-editor";
 import { createSignedStyleAssetUrl } from "../services/media/media-signing.server";
 import { uploadStyleFrameTexture } from "../services/styles/style-product-media.server";
 import { syncStylePricingToShopify } from "../services/styles/style-pricing-sync.server";
@@ -113,10 +113,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
   try {
     if (intent === "addOption" || intent === "editOption") {
+      const rawAxisRole = formValue(formData, "axisRole");
+
       const input: StyleOptionInput = {
         label: formValue(formData, "label"),
         type: formValue(formData, "type"),
-        axisRole: formValue(formData, "axisRole") || null,
+        axisRole: rawAxisRole && rawAxisRole !== AXIS_ROLE_NONE ? rawAxisRole : null,
       };
 
       if (intent === "addOption") {
