@@ -2,7 +2,6 @@ import type { LoaderFunctionArgs } from "react-router";
 
 import { createSignedStyleAssetUrl } from "../services/media/media-signing.server";
 import { getCustomerGenerationStatus } from "../services/customer/customer-generation.server";
-import { parseSizeVariants } from "../services/styles/style-publish.server";
 import { requireStyleForShop } from "../services/styles/style.server";
 import { authenticate } from "../shopify.server";
 
@@ -52,10 +51,21 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   if (status.resultAssetId) {
     const style = await requireStyleForShop(session.shop, status.styleId);
 
-    const sizeVariants = parseSizeVariants(style.productSettings);
+    // The SIZE-axis option's own choices — resolving directly off the
+    // live Style data (not a publish-time snapshot) means a size added
+    // after the last publish is still available here immediately,
+    // without needing a republish first.
+    const sizeOption = style.options.find((option) => option.axisRole === "SIZE");
+
+    const sizeChoices = (sizeOption?.choices ?? [])
+      .filter((choice) => choice.scalePercent !== null)
+      .map((choice) => ({
+        label: choice.label,
+        scalePercent: choice.scalePercent as number,
+      }));
 
     resultUrls = Object.fromEntries(
-      sizeVariants.map((entry) => [
+      sizeChoices.map((entry) => [
         entry.label,
         createSignedStyleAssetUrl(
           request.url,
@@ -67,9 +77,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       ]),
     );
 
-    const largest = sizeVariants.reduce<
-      (typeof sizeVariants)[number] | null
-    >(
+    const largest = sizeChoices.reduce<(typeof sizeChoices)[number] | null>(
       (best, entry) =>
         !best || entry.scalePercent > best.scalePercent ? entry : best,
       null,

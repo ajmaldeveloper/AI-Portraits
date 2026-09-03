@@ -10,7 +10,6 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import {
-  parseSizeVariants,
   publishStyleToShopify,
   unpublishStyleFromShopify,
 } from "../services/styles/style-publish.server";
@@ -92,49 +91,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     hasPendingChanges,
 
-    // Fires whenever the set of active VARIANT-role options on the
-    // Product options tab right now differs from what the last publish
-    // actually created in Shopify — adding, removing, or combining
-    // axes always replaces every variant (the option set itself
-    // changes), which can break an already-open cart/checkout
-    // referencing an old variant id. compositeKey joins
-    // `${optionId}:${choiceId}` per active axis, so the set of optionIds
-    // embedded in any one stored variant's key tells us which axes were
-    // active last time.
-    needsSizeVariantMigration: (() => {
-      if (style.status !== "PUBLISHED") {
-        return false;
-      }
-
-      const currentAxisOptionIds = new Set(
-        style.options
-          .filter((option) => option.role === "VARIANT" && option.choices.length > 0)
-          .map((option) => option.id),
-      );
-
-      const storedVariants = parseSizeVariants(style.productSettings);
-
-      const firstKey = storedVariants[0]?.compositeKey ?? "none";
-
-      const storedAxisOptionIds = new Set(
-        firstKey === "none"
-          ? []
-          : firstKey.split("::").map((part) => part.split(":")[0]),
-      );
-
-      if (currentAxisOptionIds.size !== storedAxisOptionIds.size) {
-        return true;
-      }
-
-      for (const id of currentAxisOptionIds) {
-        if (!storedAxisOptionIds.has(id)) {
-          return true;
-        }
-      }
-
-      return false;
-    })(),
-
     published: url.searchParams.get("published") === "1",
 
     unpublished: url.searchParams.get("unpublished") === "1",
@@ -197,7 +153,6 @@ export default function StylePublish() {
     tagsCount,
     collectionsCount,
     hasPendingChanges,
-    needsSizeVariantMigration,
     published,
     unpublished,
   } = useLoaderData<typeof loader>();
@@ -290,17 +245,6 @@ export default function StylePublish() {
 
             {isUpdateReady && !hasPendingChanges ? (
               <s-text color="subdued">No changes to push yet.</s-text>
-            ) : null}
-
-            {needsSizeVariantMigration ? (
-              <s-banner tone="warning" heading="Variants will change">
-                <s-paragraph>
-                  Sizes and/or framing configured on the Product tab don&rsquo;t
-                  match this product&rsquo;s live variants yet. The next update
-                  replaces them to match — any checkout already open with an
-                  old variant will need to start over.
-                </s-paragraph>
-              </s-banner>
             ) : null}
 
             <Form method="post">

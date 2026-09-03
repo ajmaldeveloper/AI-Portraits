@@ -7,6 +7,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { StyleOptionsEditor } from "../components/styles/style-options-editor";
 import { createSignedStyleAssetUrl } from "../services/media/media-signing.server";
 import { uploadStyleFrameTexture } from "../services/styles/style-product-media.server";
+import { syncStylePricingToShopify } from "../services/styles/style-pricing-sync.server";
 import {
   createStyleOption,
   createStyleOptionChoice,
@@ -33,6 +34,21 @@ function numberValue(formData: FormData, key: string) {
   const value = formValue(formData, key);
 
   return value ? Number(value) : null;
+}
+
+// Best-effort — the option/choice change is already committed to the
+// DB by the time this runs, so a Shopify sync failure here must never
+// block the save or roll anything back. It's logged and left for the
+// next save (or a future manual retry) to pick up.
+async function syncPricingBestEffort(
+  admin: Awaited<ReturnType<typeof authenticate.admin>>["admin"],
+  shop: string,
+) {
+  const result = await syncStylePricingToShopify(admin, shop);
+
+  if (!result.ok) {
+    console.error(`Could not sync Shopify pricing for shop ${shop}: ${result.message}`);
+  }
 }
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
@@ -84,7 +100,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
-  const { session, redirect } = await authenticate.admin(request);
+  const { session, admin, redirect } = await authenticate.admin(request);
 
   const styleId = params.styleId;
 
@@ -113,6 +129,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         await updateStyleOption(session.shop, styleId, optionId, input);
       }
 
+      await syncPricingBestEffort(admin, session.shop);
+
       return redirect(`/app/styles/${styleId}/options?notice=option-saved`);
     }
 
@@ -120,6 +138,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       const optionId = formValue(formData, "optionId");
 
       await deleteStyleOption(session.shop, styleId, optionId);
+
+      await syncPricingBestEffort(admin, session.shop);
 
       return redirect(`/app/styles/${styleId}/options?notice=option-deleted`);
     }
@@ -183,6 +203,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         await updateStyleOptionChoice(session.shop, styleId, optionId, choiceId, input);
       }
 
+      await syncPricingBestEffort(admin, session.shop);
+
       return redirect(`/app/styles/${styleId}/options?notice=choice-saved`);
     }
 
@@ -192,6 +214,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       const choiceId = formValue(formData, "choiceId");
 
       await deleteStyleOptionChoice(session.shop, styleId, optionId, choiceId);
+
+      await syncPricingBestEffort(admin, session.shop);
 
       return redirect(`/app/styles/${styleId}/options?notice=choice-deleted`);
     }

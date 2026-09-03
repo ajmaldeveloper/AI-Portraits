@@ -347,15 +347,16 @@ textarea.aig-control {
   border-radius: 0 !important;
 }
 
-.aig-mat-picker {
+.aig-options {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 16px;
+  align-items: stretch;
+  gap: 16px;
+  width: 100%;
+  margin-top: 16px;
 }
 
-.aig-extra-option-group {
+.aig-option-group {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -364,34 +365,103 @@ textarea.aig-control {
 }
 
 /* Matches the theme's own native option labels (e.g. "Size",
-   "Framing") rather than the smaller, muted caption this used to be —
-   same left alignment, similar weight/size, so this option doesn't
-   read as visually distinct from the ones above it. */
+   "Framing") rather than a smaller, muted caption — same left
+   alignment, similar weight/size, so this option doesn't read as
+   visually distinct from the ones above it. */
 .aig-mat-picker-label {
   font-size: 1em;
   font-weight: 600;
   color: var(--aig-text);
 }
 
-.aig-swatch-group {
+.aig-choice-chip-group {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-start;
   gap: 8px;
 }
 
-.aig-swatch {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+/* One shape for every option type — Size (text + price), Framing
+   (color swatch or uploaded texture thumbnail + price), Mat color
+   (color swatch, no price) — so switching an option's type never
+   needs a different interaction pattern on the storefront. */
+.aig-choice-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 64px;
+  padding: 8px 12px;
+  font-family: var(--aig-font);
+  color: var(--aig-text);
+  text-align: center;
   cursor: pointer;
+  background: #ffffff;
+  border: 1px solid var(--aig-border);
+  border-radius: var(--aig-radius);
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
 }
 
-.aig-swatch[aria-pressed="true"] {
+.aig-choice-chip:hover {
   border-color: var(--aig-focus);
+}
+
+.aig-choice-chip[aria-pressed="true"] {
+  background: #f6f6f7;
+  border-color: var(--aig-focus);
+  box-shadow: 0 0 0 1px var(--aig-focus);
+}
+
+.aig-choice-chip-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-position: center;
+  background-size: cover;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.aig-choice-chip-swatch--none {
+  background: linear-gradient(
+    to bottom right,
+    transparent calc(50% - 1px),
+    var(--aig-border) calc(50% - 1px) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+}
+
+.aig-choice-chip-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.aig-choice-chip-price {
+  font-size: 12px;
+  color: var(--aig-muted);
+}
+
+.aig-choice-chip-compare {
+  margin-right: 4px;
+  color: var(--aig-muted);
+  text-decoration: line-through;
+}
+
+.aig-price-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-weight: 650;
+  background: #f6f6f7;
+  border-radius: var(--aig-radius);
+}
+
+.aig-price-total {
+  font-size: 18px;
 }
 
 .aig-spinner {

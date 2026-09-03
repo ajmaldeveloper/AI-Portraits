@@ -1,0 +1,67 @@
+query CartTransformRunInput {
+  presentmentCurrencyRate
+
+  cartTransform {
+    adjustmentConfig: metafield(
+      namespace: "$app"
+      key: "aig_adjustment_config"
+    ) {
+      jsonValue
+    }
+
+    shippingConfig: metafield(namespace: "$app", key: "aig_shipping_config") {
+      jsonValue
+    }
+
+    # Styles are distributed across a fixed number of "shard" metafields
+    # (rather than one combined blob) so each stays well under the
+    # ~10KB ceiling a Function's jsonValue resolution enforces per
+    # metafield — CartTransform only exposes the singular
+    # `metafield(key:)` field here (no list/connection), so the shard
+    # count has to be a fixed, statically-aliased set.
+    pricingShard0: metafield(namespace: "$app", key: "aig_pricing_shard_0") {
+      jsonValue
+    }
+    pricingShard1: metafield(namespace: "$app", key: "aig_pricing_shard_1") {
+      jsonValue
+    }
+    pricingShard2: metafield(namespace: "$app", key: "aig_pricing_shard_2") {
+      jsonValue
+    }
+  }
+
+  cart {
+    lines {
+      id
+      quantity
+
+      cost {
+        amountPerQuantity {
+          amount
+        }
+      }
+
+      aigOptionSet: attribute(key: "_aig_option_set") {
+        value
+      }
+
+      aigSelections: attribute(key: "_aig_selections") {
+        value
+      }
+
+      sellingPlanAllocation {
+        sellingPlan {
+          id
+        }
+      }
+
+      merchandise {
+        __typename
+
+        ... on ProductVariant {
+          id
+        }
+      }
+    }
+  }
+}

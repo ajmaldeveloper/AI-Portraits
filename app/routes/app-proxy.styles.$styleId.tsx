@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
 
-import { parseSizeVariants } from "../services/styles/style-publish.server";
+import { createSignedStyleAssetUrl } from "../services/media/media-signing.server";
 import { requireStyleForShop } from "../services/styles/style.server";
 import { authenticate } from "../shopify.server";
 
@@ -61,6 +61,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
       styleId: style.id,
       name: style.name,
+      basePrice: style.basePrice.toString(),
 
       // Only what the storefront form needs to render itself — never
       // the transformation prompt, which is proprietary to the
@@ -77,41 +78,46 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         options: stringArray(field.options),
       })),
 
-      // Lets the storefront match the theme's native variant picker
-      // back to the right result-image URL from resultUrls (see
-      // app-proxy.generations.$generationId.tsx) — numericVariantId
-      // matches what the cart form's own "id" field submits.
-      // frameColor/frameImageUrl (both null when this variant has no
-      // visual frame, e.g. a "No Frame" choice) drive the storefront's
-      // CSS border — see SizeVariantMapping's own comment for where
-      // they come from. A variant carries at most one of the two —
-      // whichever the Framing-axis choice's own type set.
-      variantOptions: parseSizeVariants(style.productSettings).map((entry) => ({
-        variantId: entry.numericVariantId,
-        label: entry.label,
-        scalePercent: entry.scalePercent,
-        frameColor: entry.frameColor,
-        frameImageUrl: entry.frameImageUrl,
-        borderThicknessPx: entry.borderThicknessPx,
-        matThicknessPx: entry.matThicknessPx,
-        borderRadiusPx: entry.borderRadiusPx,
-      })),
-
-      // Independent of Framing's own Shopify variants — any EXTRA
-      // option choice combines with any Framing choice — so these come
-      // straight from the Style's own relations, not the publish-time
-      // sizeVariants mapping, and stay current even before a
-      // republish. One entry per role: EXTRA StyleOption (Mat color is
-      // just whichever one a merchant has set up).
-      extraOptions: style.options
-        .filter((option) => option.role === "EXTRA")
-        .map((option) => ({
-          label: option.label,
-          choices: option.choices.map((choice) => ({
-            label: choice.label,
-            hexColor: choice.hexColor,
-          })),
+      // Every Product option this Style has, priced or not — the
+      // storefront extension renders ALL of these itself (the Shopify
+      // product behind this Style is always a plain single-variant
+      // product; there's no native variant picker to lean on). role
+      // "VARIANT" options carry pricing (priceDelta/compareAtPriceDelta)
+      // that the storefront sums into a running total, matching what
+      // the ai-art-generator-price-transform Cart Transform Function
+      // will actually charge at checkout — see
+      // style-pricing-sync.server.ts, the single source of truth this
+      // mirrors. axisRole "SIZE" additionally drives which resolution
+      // to request for the result image (scalePercent); axisRole
+      // "FRAMING" additionally drives the visual frame preview
+      // (hexColor/frameImageUrl/thickness/mat/radius) and whether the
+      // order needs physical shipping.
+      options: style.options.map((option) => ({
+        id: option.id,
+        label: option.label,
+        type: option.type,
+        role: option.role,
+        axisRole: option.axisRole,
+        choices: option.choices.map((choice) => ({
+          id: choice.id,
+          label: choice.label,
+          priceDelta: choice.priceDelta?.toString() ?? null,
+          compareAtPriceDelta: choice.compareAtPriceDelta?.toString() ?? null,
+          requiresShipping: choice.requiresShipping,
+          scalePercent: choice.scalePercent,
+          hexColor: choice.hexColor,
+          frameImageUrl: choice.frameImageAssetId
+            ? createSignedStyleAssetUrl(
+                request.url,
+                choice.frameImageAssetId,
+                session.shop,
+              )
+            : null,
+          borderThicknessPx: choice.borderThicknessPx,
+          matThicknessPx: choice.matThicknessPx,
+          borderRadiusPx: choice.borderRadiusPx,
         })),
+      })),
     },
     {
       headers: {

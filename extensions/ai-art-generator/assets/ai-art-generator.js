@@ -3,6 +3,15 @@
 // upload a photo and fill in any other fields, submits it, and polls
 // for the generated result. No framework — this ships straight to the
 // storefront, so it stays dependency-free.
+//
+// Product options (Size, Framing, Mat color, everything on the
+// merchant's Product options tab) are never modeled as real Shopify
+// product variants — the linked Shopify product is always a plain
+// single-variant product. This component renders every option itself
+// and prices it client-side purely for display; the actual charge is
+// applied at checkout by the ai-art-generator-price-transform Cart
+// Transform Function, which re-derives the same total server-side from
+// the selections recorded on the cart line (see wireCartGate below).
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLL_ATTEMPTS = 90; // ~3 minutes
@@ -20,13 +29,17 @@ class AiArtGenerator extends HTMLElement {
     this.photoFile = null;
     this.pollTimer = null;
 
-    // { variantId, label, scalePercent, frameColor, frameImageUrl,
-    // borderThicknessPx }[] — from the app proxy, one entry per real
-    // Shopify variant, only populated once the product's been
-    // published. frameColor/frameImageUrl are mutually exclusive
-    // (a Framing choice is COLOR_SWATCH or IMAGE_SWATCH type, never
-    // both) and both null for a variant with no visual frame.
-    this.variantOptions = [];
+    this.basePrice = "0";
+
+    // Every Product option on this Style (both role: VARIANT, which is
+    // priced, and role: EXTRA, which isn't) — see
+    // app-proxy.styles.$styleId.tsx for the exact shape.
+    this.options = [];
+
+    // { [optionId]: choiceId } — which choice is currently picked for
+    // each option. Populated with a sensible default per option as
+    // soon as options load (see defaultSelections()).
+    this.selectedChoices = {};
 
     // Captured at submit time — the form's own inputs are gone by the
     // time the theme's native "Add to cart" is clicked, since a
@@ -36,18 +49,6 @@ class AiArtGenerator extends HTMLElement {
     this.submittedPersonalization = "";
     this.generationId = null;
     this.generationResultUrl = null;
-
-    // { label, choices: {label, hexColor}[] }[] — from the app proxy,
-    // one entry per role: EXTRA StyleOption (Mat color is just
-    // whichever one a merchant has set up). Independent of Framing's
-    // own Shopify variant (any choice combines with any Framing
-    // choice). Only ever shown/applied when the currently selected
-    // variant is actually framed.
-    this.extraOptions = [];
-
-    // { [optionLabel]: selectedChoiceLabel } — which choice is
-    // currently picked for each extra option.
-    this.selectedExtraChoices = {};
   }
 
   connectedCallback() {
@@ -63,18 +64,15 @@ class AiArtGenerator extends HTMLElement {
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
     }
-
-    if (this.frameSyncTimer) {
-      clearInterval(this.frameSyncTimer);
-    }
   }
 
   // Hooks the theme's own native "Add to cart" form directly — same
   // approach as this shop's Product Options app: a capturing submit
   // listener blocks the native submission when personalization isn't
   // finished yet, and the form's own "formdata" event is used to
-  // attach the generation result and field answers as line item
-  // properties, rather than building a separate cart request.
+  // attach the generation result, the customer's option selections,
+  // and field answers as line item properties, rather than building a
+  // separate cart request.
   wireCartGate() {
     const form = findProductForm(this);
 
@@ -100,40 +98,35 @@ class AiArtGenerator extends HTMLElement {
         return;
       }
 
-      const selectedVariantId = getSelectedVariantId(form);
+      const framingChoice = this.selectedFramingChoice();
 
-      const matchedVariant = this.variantOptions.find(
-        (option) => option.variantId === selectedVariantId,
+      const isFramed = Boolean(
+        framingChoice?.hexColor || framingChoice?.frameImageUrl,
       );
 
       // Shopify hides any property whose key starts with "_" from the
       // cart, checkout, and order confirmation — kept purely for
-      // backend/fulfillment use (visible to the merchant in the order's
-      // admin view, alongside the one link below — no need for a
-      // second, redundant one).
+      // backend/fulfillment use (visible to the merchant in the
+      // order's admin view).
       event.formData.set(
         "properties[_ai_art_generation_id]",
         this.generationId || "",
       );
 
-      // Extra options are independent of Framing (any choice combines
-      // with any Framing choice), but only meaningful — and only
-      // recorded — when the selected variant is actually framed at
-      // all (either a flat color or an uploaded texture).
-      const isFramed = Boolean(
-        matchedVariant?.frameColor || matchedVariant?.frameImageUrl,
-      );
+      // Read by the ai-art-generator-price-transform Cart Transform
+      // Function at checkout (see its own cart_transform_run.graphql/
+      // .js) to compute the real surcharge and, if the Framing choice
+      // needs it, add the shipping-carrier line — this is the only
+      // place pricing actually gets applied; everything shown in this
+      // widget is a preview of the same math.
+      if (this.hasPricedOptions()) {
+        event.formData.set("properties[_aig_option_set]", this.styleId);
 
-      const selectedExtraChoices = isFramed
-        ? this.extraOptions
-            .map((option) => ({
-              option,
-              choice: option.choices.find(
-                (choice) => choice.label === this.selectedExtraChoices[option.label],
-              ),
-            }))
-            .filter((entry) => entry.choice)
-        : [];
+        event.formData.set(
+          "properties[_aig_selections]",
+          JSON.stringify(this.selectedChoices),
+        );
+      }
 
       // The artwork link: kept private (a "_"-prefixed key, which
       // Shopify hides from the cart, checkout, and order confirmation)
@@ -141,10 +134,10 @@ class AiArtGenerator extends HTMLElement {
       // to the customer. The short redirect link (no query
       // string/signature, beyond an optional frame/mat color) is the
       // value, so even there it reads as a clean short URL rather than
-      // a wall of raw text. When the selected variant carries a
-      // frameColor, it (and any extra color choice) is passed through
-      // so the linked copy has the same mat + frame border composited
-      // in as what was actually ordered — see
+      // a wall of raw text. When the selected Framing choice carries a
+      // color, it (and any extra color choice, e.g. Mat color) is
+      // passed through so the linked copy has the same mat + frame
+      // border composited in as what was actually ordered — see
       // media.style-assets.$assetId.ts. Uploaded-texture (IMAGE_SWATCH)
       // frames aren't baked into the linked file (see that route's own
       // comment on the scope boundary). The link itself still downloads
@@ -156,18 +149,18 @@ class AiArtGenerator extends HTMLElement {
           window.location.origin,
         );
 
-        if (matchedVariant?.frameColor) {
+        if (framingChoice?.hexColor) {
           artworkUrl.searchParams.set(
             "frame",
-            matchedVariant.frameColor.replace(/^#/, ""),
+            framingChoice.hexColor.replace(/^#/, ""),
           );
 
-          const matChoice = selectedExtraChoices.find((entry) => entry.choice.hexColor);
+          const matChoice = this.selectedMatColorChoice();
 
-          if (matChoice) {
+          if (matChoice?.hexColor) {
             artworkUrl.searchParams.set(
               "mat",
-              matChoice.choice.hexColor.replace(/^#/, ""),
+              matChoice.hexColor.replace(/^#/, ""),
             );
           }
         }
@@ -178,15 +171,18 @@ class AiArtGenerator extends HTMLElement {
         );
       }
 
-      if (matchedVariant) {
-        event.formData.set("properties[Print size]", matchedVariant.label);
-      }
+      // Every option the customer actually picked, recorded as a
+      // regular (visible) line item property — e.g. "Print size: 16x20
+      // in", "Framing: Black", "Mat color: Ivory" — whatever the
+      // merchant named the option.
+      for (const option of this.options) {
+        const choice = this.choiceFor(option);
 
-      for (const entry of selectedExtraChoices) {
-        event.formData.set(
-          `properties[${entry.option.label}]`,
-          entry.choice.label,
-        );
+        if (!choice) {
+          continue;
+        }
+
+        event.formData.set(`properties[${option.label}]`, choice.label);
       }
 
       for (const [key, value] of Object.entries(this.submittedFieldValues)) {
@@ -205,41 +201,6 @@ class AiArtGenerator extends HTMLElement {
       // generation only (e.g. "make the hair black") — not something a
       // customer needs restated back to them as an order line item.
     });
-
-    // Reacts to the theme's own native Size/Framing picker so the
-    // frame border updates live as the customer switches variants,
-    // without requiring a page reload — same pattern as this shop's
-    // Product Options app (listens for the cart form's own "id" field
-    // changing, which the theme's variant-picker JS keeps in sync).
-    form.addEventListener("change", (event) => {
-      if (event.target?.name === "id") {
-        this.updateFramePreview();
-      }
-    });
-
-    // Belt-and-suspenders for themes whose custom variant-picker
-    // buttons (as opposed to a native <select>) update the hidden "id"
-    // field's value without dispatching a real "change" event — a
-    // cheap poll while a result exists, only acting when the selected
-    // variant actually changed, so it's correct regardless of how any
-    // given theme's picker is implemented.
-    this.lastSyncedVariantId = null;
-
-    this.frameSyncTimer = setInterval(() => {
-      if (!this.querySelector(".aig-frame-wrap")) {
-        return;
-      }
-
-      const currentVariantId = getSelectedVariantId(form);
-
-      if (currentVariantId === this.lastSyncedVariantId) {
-        return;
-      }
-
-      this.lastSyncedVariantId = currentVariantId;
-
-      this.updateFramePreview();
-    }, 400);
   }
 
   // A required image field means the whole product is "upload a photo,
@@ -293,25 +254,117 @@ class AiArtGenerator extends HTMLElement {
       }
 
       this.fields = payload.fields || [];
-      this.variantOptions = payload.variantOptions || [];
-      this.extraOptions = payload.extraOptions || [];
-
-      // Default each extra option to its first choice so the mat
-      // shows immediately once a result appears (when the variant is
-      // framed) without requiring a click first — the customer can
-      // still switch afterward.
-      this.selectedExtraChoices = {};
-
-      for (const option of this.extraOptions) {
-        if (option.choices[0]) {
-          this.selectedExtraChoices[option.label] = option.choices[0].label;
-        }
-      }
+      this.basePrice = payload.basePrice || "0";
+      this.options = payload.options || [];
+      this.selectedChoices = this.defaultSelections();
 
       this.renderForm();
     } catch {
       this.renderError("Could not load the personalization form.");
     }
+  }
+
+  // One sensible default choice per option, picked before the customer
+  // has interacted at all, so the frame preview and the price total are
+  // both correct the instant a result appears. The Size axis defaults
+  // to whichever choice is the product's base price (scalePercent
+  // 100) rather than just the first one, since that's the size the
+  // Shopify product itself is actually priced at.
+  defaultSelections() {
+    const selections = {};
+
+    for (const option of this.options) {
+      if (option.choices.length === 0) {
+        continue;
+      }
+
+      const baseChoice =
+        option.axisRole === "SIZE"
+          ? option.choices.find((choice) => choice.scalePercent === 100)
+          : null;
+
+      selections[option.id] = (baseChoice || option.choices[0]).id;
+    }
+
+    return selections;
+  }
+
+  choiceFor(option) {
+    const choiceId = this.selectedChoices[option.id];
+
+    return option.choices.find((choice) => choice.id === choiceId) || null;
+  }
+
+  sizeOption() {
+    return this.options.find((option) => option.axisRole === "SIZE") || null;
+  }
+
+  framingOption() {
+    return this.options.find((option) => option.axisRole === "FRAMING") || null;
+  }
+
+  selectedFramingChoice() {
+    const option = this.framingOption();
+
+    return option ? this.choiceFor(option) : null;
+  }
+
+  // First EXTRA-role, color-carrying option's selected choice — in
+  // practice there's normally just one (Mat color), but this stays
+  // correct if a merchant sets up more than one.
+  selectedMatColorChoice() {
+    for (const option of this.options) {
+      if (option.role !== "EXTRA" || option.type !== "COLOR_SWATCH") {
+        continue;
+      }
+
+      const choice = this.choiceFor(option);
+
+      if (choice?.hexColor) {
+        return choice;
+      }
+    }
+
+    return null;
+  }
+
+  hasPricedOptions() {
+    return this.options.some(
+      (option) => option.role === "VARIANT" && option.choices.length > 0,
+    );
+  }
+
+  // Purely a preview of what the Cart Transform Function will actually
+  // charge at checkout (see that Function's own computeStyleTotal,
+  // which this mirrors) — never the value actually billed, so a
+  // mismatch here can only ever under/over-represent the price shown,
+  // not the price paid.
+  computeTotal() {
+    const sizeOption = this.sizeOption();
+
+    let total = Number(this.basePrice) || 0;
+
+    if (sizeOption) {
+      const choice = this.choiceFor(sizeOption);
+
+      if (choice && choice.priceDelta !== null) {
+        total = Number(choice.priceDelta) || 0;
+      }
+    }
+
+    for (const option of this.options) {
+      if (option.role !== "VARIANT" || option === sizeOption) {
+        continue;
+      }
+
+      const choice = this.choiceFor(option);
+
+      if (choice && choice.priceDelta !== null) {
+        total += Number(choice.priceDelta) || 0;
+      }
+    }
+
+    return Math.round((total + Number.EPSILON) * 100) / 100;
   }
 
   renderLoading() {
@@ -604,10 +657,10 @@ class AiArtGenerator extends HTMLElement {
   renderResult(resultUrl) {
     this.innerHTML = `
       <div class="aig-result">
-        ${this.renderExtraOptionSwatchesHtml()}
         <div class="aig-frame-wrap">
           <img src="${resultUrl}" alt="Your personalized artwork" draggable="false" />
         </div>
+        ${this.renderOptionsHtml()}
       </div>
     `;
 
@@ -625,77 +678,123 @@ class AiArtGenerator extends HTMLElement {
       event.preventDefault(),
     );
 
-    this.wireExtraOptionSwatches();
+    this.wireOptionChips();
     this.updateFramePreview();
+    this.updatePriceSummary();
   }
 
-  // Rendered above the result image — hidden/shown by updateFramePreview
-  // depending on whether the currently selected variant is framed, not
-  // omitted outright, so the swatches don't have to be rebuilt every
-  // time the customer switches Framing options back and forth. One
-  // swatch group per role: EXTRA StyleOption (Mat color is just
-  // whichever one a merchant has set up).
-  renderExtraOptionSwatchesHtml() {
-    if (this.extraOptions.length === 0) {
+  // Rendered below the result image — one group per Product option that
+  // has any choices at all. role: VARIANT groups (Size, Framing, ...)
+  // always show; role: EXTRA groups (Mat color) are hidden/shown by
+  // updateFramePreview depending on whether the current Framing
+  // selection is actually a physical frame, matching the earlier
+  // mat-color-only-when-framed behavior.
+  renderOptionsHtml() {
+    const groups = this.options.filter((option) => option.choices.length > 0);
+
+    if (groups.length === 0) {
       return "";
     }
 
-    const groups = this.extraOptions
-      .map((option) => {
-        const swatches = option.choices
-          .map(
-            (choice) => `
-              <button
-                type="button"
-                class="aig-swatch"
-                style="background:${escapeHtml(choice.hexColor)}"
-                data-aig-extra-option="${escapeHtml(option.label)}"
-                data-aig-extra-choice="${escapeHtml(choice.label)}"
-                aria-pressed="${this.selectedExtraChoices[option.label] === choice.label}"
-                aria-label="${escapeHtml(choice.label)}"
-                title="${escapeHtml(choice.label)}"
-              ></button>
-            `,
-          )
-          .join("");
+    const groupsHtml = groups.map((option) => this.renderOptionGroupHtml(option)).join("");
 
-        return `
-          <div class="aig-extra-option-group">
-            <span class="aig-mat-picker-label">${escapeHtml(option.label)}</span>
-            <div class="aig-swatch-group">${swatches}</div>
-          </div>
-        `;
-      })
-      .join("");
+    const priceSummaryHtml = this.hasPricedOptions()
+      ? `
+        <div class="aig-price-summary">
+          <span>Total</span>
+          <span class="aig-price-total" data-aig-price-total></span>
+        </div>
+      `
+      : "";
 
-    return `<div class="aig-mat-picker" hidden>${groups}</div>`;
+    return `<div class="aig-options">${groupsHtml}${priceSummaryHtml}</div>`;
   }
 
-  wireExtraOptionSwatches() {
-    this.querySelectorAll("[data-aig-extra-choice]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const optionLabel = button.dataset.aigExtraOption;
+  renderOptionGroupHtml(option) {
+    const isSizeAxis = option.axisRole === "SIZE";
 
-        this.selectedExtraChoices[optionLabel] = button.dataset.aigExtraChoice;
+    const chipsHtml = option.choices
+      .map((choice) => this.renderChoiceChipHtml(option, choice, isSizeAxis))
+      .join("");
+
+    const hideForNow = option.role === "EXTRA";
+
+    return `
+      <div
+        class="aig-option-group"
+        data-aig-option-group="${escapeHtml(option.id)}"
+        ${hideForNow ? "hidden" : ""}
+      >
+        <span class="aig-mat-picker-label">${escapeHtml(option.label)}</span>
+        <div class="aig-choice-chip-group">${chipsHtml}</div>
+      </div>
+    `;
+  }
+
+  renderChoiceChipHtml(option, choice, isSizeAxis) {
+    const selected = this.selectedChoices[option.id] === choice.id;
+
+    const priceHtml = choicePriceHtml(option, choice, isSizeAxis);
+
+    let swatchHtml = "";
+
+    if (option.type === "COLOR_SWATCH") {
+      swatchHtml = choice.hexColor
+        ? `<span class="aig-choice-chip-swatch" style="background:${escapeHtml(choice.hexColor)}"></span>`
+        : `<span class="aig-choice-chip-swatch aig-choice-chip-swatch--none"></span>`;
+    } else if (option.type === "IMAGE_SWATCH" && choice.frameImageUrl) {
+      swatchHtml = `<span class="aig-choice-chip-swatch" style="background-image:url('${choice.frameImageUrl}')"></span>`;
+    }
+
+    return `
+      <button
+        type="button"
+        class="aig-choice-chip"
+        data-aig-option="${escapeHtml(option.id)}"
+        data-aig-choice="${escapeHtml(choice.id)}"
+        aria-pressed="${selected}"
+      >
+        ${swatchHtml}
+        <span class="aig-choice-chip-label">${escapeHtml(choice.label)}</span>
+        ${priceHtml ? `<span class="aig-choice-chip-price">${priceHtml}</span>` : ""}
+      </button>
+    `;
+  }
+
+  wireOptionChips() {
+    this.querySelectorAll("[data-aig-choice]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const optionId = button.dataset.aigOption;
+
+        this.selectedChoices[optionId] = button.dataset.aigChoice;
 
         this.querySelectorAll(
-          `[data-aig-extra-option="${CSS.escape(optionLabel)}"]`,
+          `[data-aig-option="${CSS.escape(optionId)}"]`,
         ).forEach((other) => {
           other.setAttribute("aria-pressed", String(other === button));
         });
 
         this.updateFramePreview();
+        this.updatePriceSummary();
       });
     });
   }
 
-  // Resolves the frame carried by whichever variant the theme's native
-  // picker currently has selected, and draws (or clears) the CSS
-  // border + mat ring around the result image accordingly — a Framing
-  // choice only sets frameColor/frameImageUrl when it's an actual
-  // physical frame (e.g. not a "No Frame" row), so this naturally
-  // shows the frame/mat only when a real framed choice is selected.
-  // Safe to call any time — a no-op before a result exists.
+  updatePriceSummary() {
+    const total = this.querySelector("[data-aig-price-total]");
+
+    if (total) {
+      total.textContent = formatMoney(this.computeTotal());
+    }
+  }
+
+  // Resolves the currently-selected Framing choice and draws (or
+  // clears) the CSS border + mat ring around the result image
+  // accordingly — a Framing choice only carries a hexColor/
+  // frameImageUrl when it's an actual physical frame (e.g. not a "No
+  // Frame" row), so this naturally shows the frame/mat only when a
+  // real framed choice is selected. Safe to call any time — a no-op
+  // before a result exists.
   updateFramePreview() {
     const wrap = this.querySelector(".aig-frame-wrap");
 
@@ -703,21 +802,23 @@ class AiArtGenerator extends HTMLElement {
       return;
     }
 
-    const picker = this.querySelector(".aig-mat-picker");
+    const framingChoice = this.selectedFramingChoice();
 
-    const selectedVariantId = this.cartForm
-      ? getSelectedVariantId(this.cartForm)
-      : null;
-
-    const matched = this.variantOptions.find(
-      (option) => option.variantId === selectedVariantId,
+    const isFramed = Boolean(
+      framingChoice?.hexColor || framingChoice?.frameImageUrl,
     );
 
-    const isFramed = Boolean(matched?.frameColor || matched?.frameImageUrl);
+    // Any EXTRA-role option group (e.g. Mat color) only makes sense
+    // once a real frame is selected.
+    this.querySelectorAll("[data-aig-option-group]").forEach((group) => {
+      const option = this.options.find(
+        (item) => item.id === group.dataset.aigOptionGroup,
+      );
 
-    if (picker) {
-      picker.hidden = !isFramed;
-    }
+      if (option?.role === "EXTRA") {
+        group.hidden = !isFramed;
+      }
+    });
 
     wrap.classList.remove("aig-framed", "aig-framed-image");
     wrap.style.removeProperty("--aig-frame-color");
@@ -734,44 +835,105 @@ class AiArtGenerator extends HTMLElement {
     // Per-choice overrides of the CSS's own defaults — meaningful for
     // either frame type (flat color or uploaded texture), null means
     // "use the default."
-    if (matched.borderThicknessPx) {
-      wrap.style.setProperty("--aig-frame-thickness", `${matched.borderThicknessPx}px`);
+    if (framingChoice.borderThicknessPx) {
+      wrap.style.setProperty(
+        "--aig-frame-thickness",
+        `${framingChoice.borderThicknessPx}px`,
+      );
     }
 
-    if (matched.matThicknessPx) {
-      wrap.style.setProperty("--aig-mat-thickness", `${matched.matThicknessPx}px`);
+    if (framingChoice.matThicknessPx) {
+      wrap.style.setProperty(
+        "--aig-mat-thickness",
+        `${framingChoice.matThicknessPx}px`,
+      );
     }
 
-    if (matched.borderRadiusPx !== null && matched.borderRadiusPx !== undefined) {
-      wrap.style.setProperty("--aig-frame-radius", `${matched.borderRadiusPx}px`);
+    if (framingChoice.borderRadiusPx !== null && framingChoice.borderRadiusPx !== undefined) {
+      wrap.style.setProperty("--aig-frame-radius", `${framingChoice.borderRadiusPx}px`);
     }
 
-    if (matched.frameImageUrl) {
-      wrap.style.setProperty("--aig-frame-image", `url("${matched.frameImageUrl}")`);
+    if (framingChoice.frameImageUrl) {
+      wrap.style.setProperty(
+        "--aig-frame-image",
+        `url("${framingChoice.frameImageUrl}")`,
+      );
       wrap.classList.add("aig-framed-image");
 
       return;
     }
 
-    wrap.style.setProperty("--aig-frame-color", matched.frameColor);
+    wrap.style.setProperty("--aig-frame-color", framingChoice.hexColor);
     wrap.classList.add("aig-framed");
 
-    // First extra option carrying a color choice wins the mat ring —
-    // in practice there's normally just one (Mat color), but this
-    // stays correct if a merchant sets up more than one color-type
-    // extra option.
-    for (const option of this.extraOptions) {
-      const selectedLabel = this.selectedExtraChoices[option.label];
+    const matChoice = this.selectedMatColorChoice();
 
-      const choice = option.choices.find((entry) => entry.label === selectedLabel);
-
-      if (choice?.hexColor) {
-        wrap.style.setProperty("--aig-mat-color", choice.hexColor);
-
-        break;
-      }
+    if (matChoice?.hexColor) {
+      wrap.style.setProperty("--aig-mat-color", matChoice.hexColor);
     }
   }
+}
+
+function formatMoney(value) {
+  const num = Number(value);
+
+  if (!Number.isFinite(num)) {
+    return "";
+  }
+
+  return `$${num.toFixed(2)}`;
+}
+
+function formatDelta(value) {
+  const num = Number(value);
+
+  if (!Number.isFinite(num) || Math.abs(num) < 0.005) {
+    return "";
+  }
+
+  const sign = num > 0 ? "+" : "−";
+
+  return `${sign}$${Math.abs(num).toFixed(2)}`;
+}
+
+// Only role: VARIANT choices carry a priceDelta at all — role: EXTRA
+// (e.g. Mat color) never shows a price. The one axisRole SIZE option's
+// priceDelta is each size's own absolute price (not an increment, the
+// same convention the admin editor and the Cart Transform Function's
+// own pricing both use); every other priced option's priceDelta is a
+// delta on top of that.
+function choicePriceHtml(option, choice, isSizeAxis) {
+  if (option.role !== "VARIANT" || choice.priceDelta === null) {
+    return "";
+  }
+
+  const compareAt = choice.compareAtPriceDelta;
+
+  if (isSizeAxis) {
+    const price = formatMoney(choice.priceDelta);
+
+    if (compareAt !== null && Number(compareAt) > Number(choice.priceDelta)) {
+      return `<s class="aig-choice-chip-compare">${formatMoney(compareAt)}</s> ${price}`;
+    }
+
+    return price;
+  }
+
+  const deltaText = formatDelta(choice.priceDelta);
+
+  if (!deltaText) {
+    return "";
+  }
+
+  if (compareAt !== null && Number(compareAt) !== Number(choice.priceDelta)) {
+    const compareText = formatDelta(compareAt);
+
+    if (compareText) {
+      return `<s class="aig-choice-chip-compare">${compareText}</s> ${deltaText}`;
+    }
+  }
+
+  return deltaText;
 }
 
 function renderImageField(field) {
@@ -950,17 +1112,6 @@ function findProductForm(root) {
   }
 
   return document.querySelector('form[action*="/cart/add"]');
-}
-
-// Shopify's own theme templates render the variant/size picker as a
-// control named "id" inside the cart-add form (a <select> or a hidden
-// input the theme's variant-picker JS updates) — this app never
-// renders its own size picker, it just reads whatever the theme's
-// native one currently has selected.
-function getSelectedVariantId(form) {
-  const control = form.querySelector('[name="id"]');
-
-  return control ? String(control.value) : null;
 }
 
 function escapeHtml(value) {

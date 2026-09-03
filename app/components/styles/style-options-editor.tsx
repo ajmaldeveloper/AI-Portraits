@@ -143,6 +143,7 @@ function OptionFormFields({
         label="Role"
         name="role"
         value={values.role}
+        details="Variant options are priced and charged at checkout. Extra options (like Mat color) are free add-ons."
         onChange={(event: Event) => {
           const role = eventValue(event);
 
