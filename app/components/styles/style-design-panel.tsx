@@ -44,6 +44,17 @@ function numToStr(value: number | null) {
   return value !== null ? String(value) : "";
 }
 
+// A color field always shows *some* swatch (there's no "blank" state
+// for a native color picker) — these are the exact hex values the
+// storefront's own CSS falls back to (see ai-art-generator.css's
+// --aig-border/--aig-focus and .aig-choice-chip's own background
+// defaults), so an unset field shows the real current color instead
+// of an empty white box that looks unset but isn't.
+const DEFAULT_BORDER_COLOR = "#d1d1d1";
+const DEFAULT_ACTIVE_BORDER_COLOR = "#005bd3";
+const DEFAULT_BACKGROUND_COLOR = "#ffffff";
+const DEFAULT_ACTIVE_BACKGROUND_COLOR = "#f6f6f7";
+
 function toFormState(values: StyleDesignValues): DesignFormState {
   return {
     swatchWidthPx: numToStr(values.swatchWidthPx),
@@ -53,11 +64,13 @@ function toFormState(values: StyleDesignValues): DesignFormState {
     swatchHeightMobilePx: numToStr(values.swatchHeightMobilePx),
     swatchFontSizeMobilePx: numToStr(values.swatchFontSizeMobilePx),
     swatchGapPx: numToStr(values.swatchGapPx),
-    swatchBorderColor: values.swatchBorderColor ?? "",
-    swatchActiveBorderColor: values.swatchActiveBorderColor ?? "",
+    swatchBorderColor: values.swatchBorderColor ?? DEFAULT_BORDER_COLOR,
+    swatchActiveBorderColor:
+      values.swatchActiveBorderColor ?? DEFAULT_ACTIVE_BORDER_COLOR,
     swatchRadiusPx: numToStr(values.swatchRadiusPx),
-    swatchBackgroundColor: values.swatchBackgroundColor ?? "",
-    swatchActiveBackgroundColor: values.swatchActiveBackgroundColor ?? "",
+    swatchBackgroundColor: values.swatchBackgroundColor ?? DEFAULT_BACKGROUND_COLOR,
+    swatchActiveBackgroundColor:
+      values.swatchActiveBackgroundColor ?? DEFAULT_ACTIVE_BACKGROUND_COLOR,
     swatchFullBleed: values.swatchFullBleed,
   };
 }
