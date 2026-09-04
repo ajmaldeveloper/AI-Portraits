@@ -600,24 +600,29 @@ function ChoiceFormFields({
         />
       ) : null}
 
-      <s-drop-zone
-        label="Image (optional)"
-        name="imageFile"
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        onChange={(event: Event) => {
-          const target = event.currentTarget as HTMLElement & { files?: File[] };
-
-          onFileChange(target.files?.[0] ?? null);
-        }}
-      >
+      <s-stack direction="block" gap="small-200">
         {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt="Current uploaded image"
-            style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 6 }}
-          />
+          <s-stack direction="inline" gap="small-200" alignItems="center">
+            <img
+              src={imageUrl}
+              alt="Current uploaded image"
+              style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #e1e3e5" }}
+            />
+            <s-text color="subdued">Current image — upload a new one below to replace it.</s-text>
+          </s-stack>
         ) : null}
-      </s-drop-zone>
+
+        <s-drop-zone
+          label="Image (optional)"
+          name="imageFile"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          onChange={(event: Event) => {
+            const target = event.currentTarget as HTMLElement & { files?: File[] };
+
+            onFileChange(target.files?.[0] ?? null);
+          }}
+        />
+      </s-stack>
 
       {option.axisRole === "FRAMING" ? (
         <s-query-container>
