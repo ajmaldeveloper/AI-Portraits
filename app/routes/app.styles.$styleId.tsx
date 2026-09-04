@@ -8,12 +8,10 @@ import {
 } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
-import { StyleDesignPanel } from "../components/styles/style-design-panel";
 import { StyleStatusBadge } from "../components/styles/style-status-badge";
 import {
   requireStyleForShop,
   styleCanBeDeleted,
-  styleCanBeEdited,
 } from "../services/styles/style.server";
 import { getStyleReadiness } from "../services/styles/style-readiness.server";
 import { authenticate } from "../shopify.server";
@@ -62,7 +60,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       status: style.status,
 
       canDelete: styleCanBeDeleted(style),
-      editable: styleCanBeEdited(style),
 
       fieldsCount: style.fields.length,
 
@@ -71,17 +68,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       tagsCount: stringArray(style.tags).length,
 
       collectionsCount: stringArray(style.collectionIds).length,
-
-      swatchWidthPx: style.swatchWidthPx,
-      swatchHeightPx: style.swatchHeightPx,
-      swatchFontSizePx: style.swatchFontSizePx,
-      swatchWidthMobilePx: style.swatchWidthMobilePx,
-      swatchHeightMobilePx: style.swatchHeightMobilePx,
-      swatchFontSizeMobilePx: style.swatchFontSizeMobilePx,
-      swatchGapPx: style.swatchGapPx,
-      swatchBorderColor: style.swatchBorderColor,
-      swatchActiveBorderColor: style.swatchActiveBorderColor,
-      swatchFullBleed: style.swatchFullBleed,
     },
 
     readiness: getStyleReadiness(style),
@@ -106,9 +92,11 @@ export default function StyleWorkspace() {
   const active =
     pathname === base || pathname === `${base}/`
       ? "overview"
-      : pathname.startsWith(`${base}/options`)
-        ? "options"
-        : pathname.startsWith(`${base}/product`)
+      : pathname.startsWith(`${base}/design`)
+        ? "design"
+        : pathname.startsWith(`${base}/options`)
+          ? "options"
+          : pathname.startsWith(`${base}/product`)
           ? "product"
           : pathname.startsWith(`${base}/generation`)
           ? "generation"
@@ -177,6 +165,10 @@ export default function StyleWorkspace() {
                 Product options
               </s-button>
 
+              <s-button href={`${base}/design`} variant={navVariant("design")}>
+                Design
+              </s-button>
+
               <s-button href={`${base}/media`} variant={navVariant("media")}>
                 Media
               </s-button>
@@ -226,9 +218,6 @@ export default function StyleWorkspace() {
               position: "sticky",
               top: 16,
               alignSelf: "start",
-              display: "flex",
-              flexDirection: "column",
-              gap: 16,
             }}
           >
             <s-section heading="What's left to finish">
@@ -286,25 +275,6 @@ export default function StyleWorkspace() {
                 ))}
               </s-stack>
             </s-section>
-
-            {active === "options" ? (
-              <StyleDesignPanel
-                styleId={style.id}
-                editable={style.editable}
-                values={{
-                  swatchWidthPx: style.swatchWidthPx,
-                  swatchHeightPx: style.swatchHeightPx,
-                  swatchFontSizePx: style.swatchFontSizePx,
-                  swatchWidthMobilePx: style.swatchWidthMobilePx,
-                  swatchHeightMobilePx: style.swatchHeightMobilePx,
-                  swatchFontSizeMobilePx: style.swatchFontSizeMobilePx,
-                  swatchGapPx: style.swatchGapPx,
-                  swatchBorderColor: style.swatchBorderColor,
-                  swatchActiveBorderColor: style.swatchActiveBorderColor,
-                  swatchFullBleed: style.swatchFullBleed,
-                }}
-              />
-            ) : null}
           </div>
         </s-grid>
       </s-stack>

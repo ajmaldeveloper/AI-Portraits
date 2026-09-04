@@ -394,10 +394,9 @@ textarea.aig-control {
 /* One shape for every option type — Size (text + price), Framing
    (color swatch or uploaded texture thumbnail + price), Mat color
    (color swatch, no price) — so switching an option's type never
-   needs a different interaction pattern on the storefront.
-   --aig-chip-border/--aig-chip-border-active are merchant-configurable
-   (Product options tab), falling back to this widget's own border/
-   focus colors when not set. */
+   needs a different interaction pattern on the storefront. All the
+   --aig-chip-* custom properties are merchant-configurable (the
+   Design tab), falling back to this widget's own defaults when unset. */
 .aig-choice-chip {
   display: flex;
   flex-direction: column;
@@ -409,9 +408,9 @@ textarea.aig-control {
   color: var(--aig-text);
   text-align: center;
   cursor: pointer;
-  background: #ffffff;
+  background: var(--aig-chip-bg, #ffffff);
   border: 1px solid var(--aig-chip-border, var(--aig-border));
-  border-radius: var(--aig-radius);
+  border-radius: var(--aig-chip-radius, var(--aig-radius));
   transition:
     border-color 140ms ease,
     background 140ms ease;
@@ -422,7 +421,7 @@ textarea.aig-control {
 }
 
 .aig-choice-chip[aria-pressed="true"] {
-  background: #f6f6f7;
+  background: var(--aig-chip-bg-active, #f6f6f7);
   border-color: var(--aig-chip-border-active, var(--aig-focus));
   box-shadow: 0 0 0 1px var(--aig-chip-border-active, var(--aig-focus));
 }

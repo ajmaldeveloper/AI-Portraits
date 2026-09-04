@@ -20,11 +20,7 @@ import {
   updateStyleOption,
   updateStyleOptionChoice,
 } from "../services/styles/style-options.server";
-import {
-  requireStyleForShop,
-  styleCanBeEdited,
-  updateStyleDraft,
-} from "../services/styles/style.server";
+import { requireStyleForShop, styleCanBeEdited } from "../services/styles/style.server";
 import { authenticate } from "../shopify.server";
 import { useNavigatingTo } from "../utils/use-navigating-to";
 
@@ -140,27 +136,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       await syncPricingBestEffort(admin, session.shop);
 
       return redirect(`/app/styles/${styleId}/options?notice=option-saved`);
-    }
-
-    // Swatch box size / label font size, global to every Product
-    // option on this Style — not tied to any one option, so it's
-    // saved via the same partial-update path as any other Style
-    // field rather than the per-option service.
-    if (intent === "saveDesign") {
-      await updateStyleDraft(session.shop, styleId, {
-        swatchWidthPx: numberValue(formData, "swatchWidthPx"),
-        swatchHeightPx: numberValue(formData, "swatchHeightPx"),
-        swatchFontSizePx: numberValue(formData, "swatchFontSizePx"),
-        swatchWidthMobilePx: numberValue(formData, "swatchWidthMobilePx"),
-        swatchHeightMobilePx: numberValue(formData, "swatchHeightMobilePx"),
-        swatchFontSizeMobilePx: numberValue(formData, "swatchFontSizeMobilePx"),
-        swatchGapPx: numberValue(formData, "swatchGapPx"),
-        swatchBorderColor: formValue(formData, "swatchBorderColor") || null,
-        swatchActiveBorderColor: formValue(formData, "swatchActiveBorderColor") || null,
-        swatchFullBleed: formData.has("swatchFullBleed"),
-      });
-
-      return redirect(`/app/styles/${styleId}/options?notice=design-saved`);
     }
 
     if (intent === "deleteOption") {
@@ -280,7 +255,6 @@ const notices: Record<string, string> = {
   "choice-saved": "Choice saved",
   "choice-deleted": "Choice deleted",
   "choices-reordered": "Choices reordered",
-  "design-saved": "Design saved",
 };
 
 export default function StyleOptions() {
@@ -371,7 +345,7 @@ export default function StyleOptions() {
         </s-button>
 
         <s-button
-          href={`/app/styles/${data.styleId}/media`}
+          href={`/app/styles/${data.styleId}/design`}
           variant="primary"
           loading={nextNav.loading}
           onClick={nextNav.onClick}

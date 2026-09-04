@@ -43,6 +43,9 @@ class AiArtGenerator extends HTMLElement {
     this.swatchGapPx = null;
     this.swatchBorderColor = null;
     this.swatchActiveBorderColor = null;
+    this.swatchRadiusPx = null;
+    this.swatchBackgroundColor = null;
+    this.swatchActiveBackgroundColor = null;
     this.swatchFullBleed = false;
 
     // Every Product option on this Style — any option's choices may
@@ -281,6 +284,9 @@ class AiArtGenerator extends HTMLElement {
       this.swatchGapPx = payload.swatchGapPx ?? null;
       this.swatchBorderColor = payload.swatchBorderColor ?? null;
       this.swatchActiveBorderColor = payload.swatchActiveBorderColor ?? null;
+      this.swatchRadiusPx = payload.swatchRadiusPx ?? null;
+      this.swatchBackgroundColor = payload.swatchBackgroundColor ?? null;
+      this.swatchActiveBackgroundColor = payload.swatchActiveBackgroundColor ?? null;
       this.swatchFullBleed = Boolean(payload.swatchFullBleed);
       this.options = payload.options || [];
       this.selectedChoices = this.defaultSelections();
@@ -749,6 +755,9 @@ class AiArtGenerator extends HTMLElement {
       "--aig-chip-gap": pxOrNull(this.swatchGapPx),
       "--aig-chip-border": this.swatchBorderColor || null,
       "--aig-chip-border-active": this.swatchActiveBorderColor || null,
+      "--aig-chip-radius": pxOrNull(this.swatchRadiusPx),
+      "--aig-chip-bg": this.swatchBackgroundColor || null,
+      "--aig-chip-bg-active": this.swatchActiveBackgroundColor || null,
     });
 
     const fullBleedClass = this.swatchFullBleed ? " aig-options--full-bleed" : "";

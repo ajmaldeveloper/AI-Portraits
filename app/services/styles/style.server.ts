@@ -34,6 +34,9 @@ export type CreateStyleDraftInput = {
   swatchGapPx?: number | null;
   swatchBorderColor?: string | null;
   swatchActiveBorderColor?: string | null;
+  swatchRadiusPx?: number | null;
+  swatchBackgroundColor?: string | null;
+  swatchActiveBackgroundColor?: string | null;
   swatchFullBleed?: boolean;
 };
 
@@ -101,6 +104,20 @@ function normalizeOptionalPositiveInt(value: number | null, fieldName: string) {
 
   if (!Number.isInteger(value) || value < 1) {
     throw new Error(`${fieldName} must be a positive whole number of pixels.`);
+  }
+
+  return value;
+}
+
+// Same, but 0 is valid (a corner radius of 0 is a real, meaningful
+// choice — square corners — not "unset").
+function normalizeOptionalNonNegativeInt(value: number | null, fieldName: string) {
+  if (value === null) {
+    return null;
+  }
+
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${fieldName} must be a non-negative whole number of pixels.`);
   }
 
   return value;
@@ -490,6 +507,27 @@ export async function updateStyleDraft(
     data.swatchActiveBorderColor = normalizeOptionalHexColor(
       input.swatchActiveBorderColor,
       "Active border color",
+    );
+  }
+
+  if (input.swatchRadiusPx !== undefined) {
+    data.swatchRadiusPx = normalizeOptionalNonNegativeInt(
+      input.swatchRadiusPx,
+      "Corner radius",
+    );
+  }
+
+  if (input.swatchBackgroundColor !== undefined) {
+    data.swatchBackgroundColor = normalizeOptionalHexColor(
+      input.swatchBackgroundColor,
+      "Background color",
+    );
+  }
+
+  if (input.swatchActiveBackgroundColor !== undefined) {
+    data.swatchActiveBackgroundColor = normalizeOptionalHexColor(
+      input.swatchActiveBackgroundColor,
+      "Selected background color",
     );
   }
 

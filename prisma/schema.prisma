@@ -158,10 +158,13 @@ model Style {
   // to-edge (covering the chip's own border) with the label/price
   // overlaid on top, instead of sitting as a small inset thumbnail
   // above them — meaningless for a choice with no image.
-  swatchGapPx             Int?
-  swatchBorderColor       String?
-  swatchActiveBorderColor String?
-  swatchFullBleed         Boolean @default(false)
+  swatchGapPx                 Int?
+  swatchBorderColor           String?
+  swatchActiveBorderColor     String?
+  swatchRadiusPx              Int?
+  swatchBackgroundColor       String?
+  swatchActiveBackgroundColor String?
+  swatchFullBleed             Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

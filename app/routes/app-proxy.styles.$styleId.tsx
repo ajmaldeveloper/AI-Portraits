@@ -76,6 +76,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       swatchGapPx: style.swatchGapPx,
       swatchBorderColor: style.swatchBorderColor,
       swatchActiveBorderColor: style.swatchActiveBorderColor,
+      swatchRadiusPx: style.swatchRadiusPx,
+      swatchBackgroundColor: style.swatchBackgroundColor,
+      swatchActiveBackgroundColor: style.swatchActiveBackgroundColor,
       swatchFullBleed: style.swatchFullBleed,
 
       // Only what the storefront form needs to render itself — never

@@ -13,6 +13,9 @@ export type StyleDesignValues = {
   swatchGapPx: number | null;
   swatchBorderColor: string | null;
   swatchActiveBorderColor: string | null;
+  swatchRadiusPx: number | null;
+  swatchBackgroundColor: string | null;
+  swatchActiveBackgroundColor: string | null;
   swatchFullBleed: boolean;
 };
 
@@ -26,6 +29,9 @@ type DesignFormState = {
   swatchGapPx: string;
   swatchBorderColor: string;
   swatchActiveBorderColor: string;
+  swatchRadiusPx: string;
+  swatchBackgroundColor: string;
+  swatchActiveBackgroundColor: string;
   swatchFullBleed: boolean;
 };
 
@@ -34,35 +40,34 @@ function checkedValue(event: Event): boolean {
   return target?.checked ?? false;
 }
 
+function numToStr(value: number | null) {
+  return value !== null ? String(value) : "";
+}
+
 function toFormState(values: StyleDesignValues): DesignFormState {
   return {
-    swatchWidthPx: values.swatchWidthPx !== null ? String(values.swatchWidthPx) : "",
-    swatchHeightPx: values.swatchHeightPx !== null ? String(values.swatchHeightPx) : "",
-    swatchFontSizePx:
-      values.swatchFontSizePx !== null ? String(values.swatchFontSizePx) : "",
-    swatchWidthMobilePx:
-      values.swatchWidthMobilePx !== null ? String(values.swatchWidthMobilePx) : "",
-    swatchHeightMobilePx:
-      values.swatchHeightMobilePx !== null ? String(values.swatchHeightMobilePx) : "",
-    swatchFontSizeMobilePx:
-      values.swatchFontSizeMobilePx !== null
-        ? String(values.swatchFontSizeMobilePx)
-        : "",
-    swatchGapPx: values.swatchGapPx !== null ? String(values.swatchGapPx) : "",
+    swatchWidthPx: numToStr(values.swatchWidthPx),
+    swatchHeightPx: numToStr(values.swatchHeightPx),
+    swatchFontSizePx: numToStr(values.swatchFontSizePx),
+    swatchWidthMobilePx: numToStr(values.swatchWidthMobilePx),
+    swatchHeightMobilePx: numToStr(values.swatchHeightMobilePx),
+    swatchFontSizeMobilePx: numToStr(values.swatchFontSizeMobilePx),
+    swatchGapPx: numToStr(values.swatchGapPx),
     swatchBorderColor: values.swatchBorderColor ?? "",
     swatchActiveBorderColor: values.swatchActiveBorderColor ?? "",
+    swatchRadiusPx: numToStr(values.swatchRadiusPx),
+    swatchBackgroundColor: values.swatchBackgroundColor ?? "",
+    swatchActiveBackgroundColor: values.swatchActiveBackgroundColor ?? "",
     swatchFullBleed: values.swatchFullBleed,
   };
 }
 
 /**
- * Swatch box size, spacing, border colors, and label font size —
- * global to the whole Style, applying uniformly to every Product
- * option's choice swatches rather than being set per option. Lives in
- * the Product options tab's sidebar (only rendered there — see
- * app.styles.$styleId.tsx), but submits to that tab's own route
- * regardless of which tab actually renders it, since that route owns
- * the intent handling.
+ * Swatch size, spacing, colors, and label font size — global to the
+ * whole Style, applying uniformly to every Product option's choice
+ * swatches rather than being set per option. Its own dedicated tab
+ * (see app.styles.$styleId.tsx / app.styles.$styleId.design.tsx),
+ * next to Product options.
  */
 export function StyleDesignPanel({
   styleId,
@@ -79,9 +84,7 @@ export function StyleDesignPanel({
 
   const navigation = useNavigation();
 
-  const submitting =
-    navigation.state !== "idle" &&
-    navigation.formData?.get("intent") === "saveDesign";
+  const submitting = navigation.state !== "idle";
 
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues);
 
@@ -89,164 +92,209 @@ export function StyleDesignPanel({
     setValues((current) => ({ ...current, ...patch }));
 
   return (
-    <s-section heading="Swatch design">
-      <Form method="post" action={`/app/styles/${styleId}/options`}>
-        <input type="hidden" name="intent" value="saveDesign" />
+    <Form method="post">
+      <s-stack direction="block" gap="base">
+        <s-section heading="Size">
+          <s-stack direction="block" gap="base">
+            <s-query-container>
+              <s-grid gridTemplateColumns="@container (inline-size > 360px) 1fr 1fr 1fr, 1fr" gap="base">
+                <s-number-field
+                  label="Width"
+                  name="swatchWidthPx"
+                  value={values.swatchWidthPx}
+                  onInput={(event: Event) => onChange({ swatchWidthPx: eventValue(event) })}
+                  min={1}
+                  step={1}
+                  suffix="px"
+                  autocomplete="off"
+                  placeholder="64"
+                  disabled={!editable}
+                />
 
-        <s-stack direction="block" gap="base">
-          <s-text color="subdued">
-            Applies to every option's choice swatches on this product.
-          </s-text>
+                <s-number-field
+                  label="Height"
+                  name="swatchHeightPx"
+                  value={values.swatchHeightPx}
+                  onInput={(event: Event) => onChange({ swatchHeightPx: eventValue(event) })}
+                  min={1}
+                  step={1}
+                  suffix="px"
+                  autocomplete="off"
+                  placeholder="40"
+                  disabled={!editable}
+                />
 
-          <s-query-container>
-            <s-grid gridTemplateColumns="@container (inline-size > 280px) 1fr 1fr, 1fr" gap="base">
-              <s-number-field
-                label="Width (px)"
-                name="swatchWidthPx"
-                value={values.swatchWidthPx}
-                onInput={(event: Event) => onChange({ swatchWidthPx: eventValue(event) })}
-                min={1}
-                step={1}
-                suffix="px"
-                autocomplete="off"
-                placeholder="64"
-                disabled={!editable}
-              />
+                <s-number-field
+                  label="Corner radius"
+                  name="swatchRadiusPx"
+                  value={values.swatchRadiusPx}
+                  onInput={(event: Event) => onChange({ swatchRadiusPx: eventValue(event) })}
+                  min={0}
+                  step={1}
+                  suffix="px"
+                  autocomplete="off"
+                  placeholder="8"
+                  disabled={!editable}
+                />
+              </s-grid>
+            </s-query-container>
 
-              <s-number-field
-                label="Height (px)"
-                name="swatchHeightPx"
-                value={values.swatchHeightPx}
-                onInput={(event: Event) => onChange({ swatchHeightPx: eventValue(event) })}
-                min={1}
-                step={1}
-                suffix="px"
-                autocomplete="off"
-                placeholder="40"
-                disabled={!editable}
-              />
-            </s-grid>
-          </s-query-container>
+            <s-query-container>
+              <s-grid gridTemplateColumns="@container (inline-size > 360px) 1fr 1fr, 1fr" gap="base">
+                <s-number-field
+                  label="Label font size"
+                  name="swatchFontSizePx"
+                  value={values.swatchFontSizePx}
+                  onInput={(event: Event) => onChange({ swatchFontSizePx: eventValue(event) })}
+                  min={1}
+                  step={1}
+                  suffix="px"
+                  autocomplete="off"
+                  placeholder="13"
+                  disabled={!editable}
+                />
 
-          <s-number-field
-            label="Label font size (px)"
-            name="swatchFontSizePx"
-            value={values.swatchFontSizePx}
-            onInput={(event: Event) => onChange({ swatchFontSizePx: eventValue(event) })}
-            min={1}
-            step={1}
-            suffix="px"
-            autocomplete="off"
-            placeholder="13"
-            disabled={!editable}
-          />
+                <s-number-field
+                  label="Gap between choices"
+                  name="swatchGapPx"
+                  value={values.swatchGapPx}
+                  onInput={(event: Event) => onChange({ swatchGapPx: eventValue(event) })}
+                  min={1}
+                  step={1}
+                  suffix="px"
+                  autocomplete="off"
+                  placeholder="8"
+                  disabled={!editable}
+                />
+              </s-grid>
+            </s-query-container>
+          </s-stack>
+        </s-section>
 
-          <s-number-field
-            label="Gap between choices (px)"
-            name="swatchGapPx"
-            value={values.swatchGapPx}
-            onInput={(event: Event) => onChange({ swatchGapPx: eventValue(event) })}
-            min={1}
-            step={1}
-            suffix="px"
-            autocomplete="off"
-            placeholder="8"
-            disabled={!editable}
-          />
+        <s-section heading="Colors">
+          <s-stack direction="block" gap="base">
+            <s-query-container>
+              <s-grid gridTemplateColumns="@container (inline-size > 360px) 1fr 1fr, 1fr" gap="base">
+                <s-color-field
+                  label="Border"
+                  name="swatchBorderColor"
+                  value={values.swatchBorderColor}
+                  onInput={(event: Event) => onChange({ swatchBorderColor: eventValue(event) })}
+                  disabled={!editable}
+                />
 
-          <s-query-container>
-            <s-grid gridTemplateColumns="@container (inline-size > 280px) 1fr 1fr, 1fr" gap="base">
-              <s-color-field
-                label="Border color"
-                name="swatchBorderColor"
-                value={values.swatchBorderColor}
-                onInput={(event: Event) => onChange({ swatchBorderColor: eventValue(event) })}
-                disabled={!editable}
-              />
+                <s-color-field
+                  label="Selected border"
+                  name="swatchActiveBorderColor"
+                  value={values.swatchActiveBorderColor}
+                  onInput={(event: Event) =>
+                    onChange({ swatchActiveBorderColor: eventValue(event) })
+                  }
+                  disabled={!editable}
+                />
+              </s-grid>
+            </s-query-container>
 
-              <s-color-field
-                label="Active border color"
-                name="swatchActiveBorderColor"
-                value={values.swatchActiveBorderColor}
-                onInput={(event: Event) =>
-                  onChange({ swatchActiveBorderColor: eventValue(event) })
-                }
-                disabled={!editable}
-              />
-            </s-grid>
-          </s-query-container>
+            <s-query-container>
+              <s-grid gridTemplateColumns="@container (inline-size > 360px) 1fr 1fr, 1fr" gap="base">
+                <s-color-field
+                  label="Background"
+                  name="swatchBackgroundColor"
+                  value={values.swatchBackgroundColor}
+                  onInput={(event: Event) =>
+                    onChange({ swatchBackgroundColor: eventValue(event) })
+                  }
+                  disabled={!editable}
+                />
 
+                <s-color-field
+                  label="Selected background"
+                  name="swatchActiveBackgroundColor"
+                  value={values.swatchActiveBackgroundColor}
+                  onInput={(event: Event) =>
+                    onChange({ swatchActiveBackgroundColor: eventValue(event) })
+                  }
+                  disabled={!editable}
+                />
+              </s-grid>
+            </s-query-container>
+          </s-stack>
+        </s-section>
+
+        <s-section heading="Photo choices">
           <s-checkbox
-            label="Full-bleed image swatches"
+            label="Full-bleed"
             name="swatchFullBleed"
             value="yes"
             checked={values.swatchFullBleed}
             onInput={(event: Event) => onChange({ swatchFullBleed: checkedValue(event) })}
-            details="An image-bearing choice's photo fills the whole chip, covering its border, with the label overlaid on top — instead of sitting as a small inset thumbnail."
+            details="A choice's own photo fills its whole chip, with the label overlaid."
             disabled={!editable}
           />
+        </s-section>
 
-          <s-text type="strong">Mobile</s-text>
+        <s-section heading="Mobile overrides">
+          <s-stack direction="block" gap="base">
+            <s-query-container>
+              <s-grid gridTemplateColumns="@container (inline-size > 360px) 1fr 1fr, 1fr" gap="base">
+                <s-number-field
+                  label="Width"
+                  name="swatchWidthMobilePx"
+                  value={values.swatchWidthMobilePx}
+                  onInput={(event: Event) =>
+                    onChange({ swatchWidthMobilePx: eventValue(event) })
+                  }
+                  min={1}
+                  step={1}
+                  suffix="px"
+                  autocomplete="off"
+                  placeholder="same as desktop"
+                  disabled={!editable}
+                />
 
-          <s-query-container>
-            <s-grid gridTemplateColumns="@container (inline-size > 280px) 1fr 1fr, 1fr" gap="base">
-              <s-number-field
-                label="Width (px)"
-                name="swatchWidthMobilePx"
-                value={values.swatchWidthMobilePx}
-                onInput={(event: Event) =>
-                  onChange({ swatchWidthMobilePx: eventValue(event) })
-                }
-                min={1}
-                step={1}
-                suffix="px"
-                autocomplete="off"
-                placeholder="same as desktop"
-                disabled={!editable}
-              />
+                <s-number-field
+                  label="Height"
+                  name="swatchHeightMobilePx"
+                  value={values.swatchHeightMobilePx}
+                  onInput={(event: Event) =>
+                    onChange({ swatchHeightMobilePx: eventValue(event) })
+                  }
+                  min={1}
+                  step={1}
+                  suffix="px"
+                  autocomplete="off"
+                  placeholder="same as desktop"
+                  disabled={!editable}
+                />
+              </s-grid>
+            </s-query-container>
 
-              <s-number-field
-                label="Height (px)"
-                name="swatchHeightMobilePx"
-                value={values.swatchHeightMobilePx}
-                onInput={(event: Event) =>
-                  onChange({ swatchHeightMobilePx: eventValue(event) })
-                }
-                min={1}
-                step={1}
-                suffix="px"
-                autocomplete="off"
-                placeholder="same as desktop"
-                disabled={!editable}
-              />
-            </s-grid>
-          </s-query-container>
+            <s-number-field
+              label="Label font size"
+              name="swatchFontSizeMobilePx"
+              value={values.swatchFontSizeMobilePx}
+              onInput={(event: Event) =>
+                onChange({ swatchFontSizeMobilePx: eventValue(event) })
+              }
+              min={1}
+              step={1}
+              suffix="px"
+              autocomplete="off"
+              placeholder="same as desktop"
+              disabled={!editable}
+            />
+          </s-stack>
+        </s-section>
 
-          <s-number-field
-            label="Label font size (px)"
-            name="swatchFontSizeMobilePx"
-            value={values.swatchFontSizeMobilePx}
-            onInput={(event: Event) =>
-              onChange({ swatchFontSizeMobilePx: eventValue(event) })
-            }
-            min={1}
-            step={1}
-            suffix="px"
-            autocomplete="off"
-            placeholder="same as desktop"
-            disabled={!editable}
-          />
-
-          <s-button
-            type="submit"
-            variant="primary"
-            loading={submitting}
-            disabled={!editable || !isDirty || submitting}
-          >
-            Save design
-          </s-button>
-        </s-stack>
-      </Form>
-    </s-section>
+        <s-button
+          type="submit"
+          variant="primary"
+          loading={submitting}
+          disabled={!editable || !isDirty || submitting}
+        >
+          Save design
+        </s-button>
+      </s-stack>
+    </Form>
   );
 }
