@@ -16,10 +16,19 @@ export type StyleOptionTypeValue = (typeof STYLE_OPTION_TYPES)[number];
 export const STYLE_OPTION_AXIS_ROLES = ["SIZE", "FRAMING"] as const;
 export type StyleOptionAxisRoleValue = (typeof STYLE_OPTION_AXIS_ROLES)[number];
 
+export const STYLE_OPTION_IMAGE_ORIENTATIONS = ["HORIZONTAL", "VERTICAL"] as const;
+export type StyleOptionImageOrientationValue =
+  (typeof STYLE_OPTION_IMAGE_ORIENTATIONS)[number];
+
+export const STYLE_OPTION_IMAGE_FITS = ["FILL", "ORIGINAL"] as const;
+export type StyleOptionImageFitValue = (typeof STYLE_OPTION_IMAGE_FITS)[number];
+
 export type StyleOptionInput = {
   label: string;
   type: string;
   axisRole: string | null;
+  imageOrientation: string;
+  imageFit: string;
 };
 
 export type StyleOptionChoiceInput = {
@@ -104,10 +113,24 @@ function validateOptionInput(input: StyleOptionInput) {
     throw new Error("Choose a valid axis role.");
   }
 
+  if (
+    !STYLE_OPTION_IMAGE_ORIENTATIONS.includes(
+      input.imageOrientation as StyleOptionImageOrientationValue,
+    )
+  ) {
+    throw new Error("Choose a valid image orientation.");
+  }
+
+  if (!STYLE_OPTION_IMAGE_FITS.includes(input.imageFit as StyleOptionImageFitValue)) {
+    throw new Error("Choose a valid image fit.");
+  }
+
   return {
     label,
     type: input.type as StyleOptionTypeValue,
     axisRole: axisRole as StyleOptionAxisRoleValue | null,
+    imageOrientation: input.imageOrientation as StyleOptionImageOrientationValue,
+    imageFit: input.imageFit as StyleOptionImageFitValue,
   };
 }
 
@@ -181,6 +204,8 @@ export async function createStyleOption(
       label: normalized.label,
       type: normalized.type,
       axisRole: normalized.axisRole,
+      imageOrientation: normalized.imageOrientation,
+      imageFit: normalized.imageFit,
       position: (lastOption?.position ?? -1) + 1,
     },
   });
@@ -206,6 +231,8 @@ export async function updateStyleOption(
       label: normalized.label,
       type: normalized.type,
       axisRole: normalized.axisRole,
+      imageOrientation: normalized.imageOrientation,
+      imageFit: normalized.imageFit,
     },
   });
 }

@@ -100,6 +100,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         label: option.label,
         type: option.type,
         axisRole: option.axisRole,
+        imageOrientation: option.imageOrientation,
+        imageFit: option.imageFit,
         choices: option.choices.map((choice) => ({
           id: choice.id,
           label: choice.label,

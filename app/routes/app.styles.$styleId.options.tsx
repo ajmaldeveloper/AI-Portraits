@@ -78,6 +78,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       label: option.label,
       type: option.type,
       axisRole: option.axisRole,
+      imageOrientation: option.imageOrientation,
+      imageFit: option.imageFit,
       choices: option.choices.map((choice) => ({
         id: choice.id,
         label: choice.label,
@@ -119,6 +121,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         label: formValue(formData, "label"),
         type: formValue(formData, "type"),
         axisRole: rawAxisRole && rawAxisRole !== AXIS_ROLE_NONE ? rawAxisRole : null,
+        imageOrientation: formValue(formData, "imageOrientation"),
+        imageFit: formValue(formData, "imageFit"),
       };
 
       if (intent === "addOption") {

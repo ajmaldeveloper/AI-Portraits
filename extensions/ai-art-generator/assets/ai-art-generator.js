@@ -742,7 +742,14 @@ class AiArtGenerator extends HTMLElement {
     let swatchHtml = "";
 
     if (choice.imageUrl) {
-      swatchHtml = `<span class="aig-choice-chip-swatch" style="background-image:url('${choice.imageUrl}')"></span>`;
+      const orientationClass =
+        option.imageOrientation === "VERTICAL"
+          ? "aig-choice-chip-swatch--vertical"
+          : "aig-choice-chip-swatch--horizontal";
+
+      const backgroundSize = option.imageFit === "ORIGINAL" ? "contain" : "cover";
+
+      swatchHtml = `<span class="aig-choice-chip-swatch aig-choice-chip-swatch--image ${orientationClass}" style="background-image:url('${choice.imageUrl}');background-size:${backgroundSize}"></span>`;
     } else if (option.type === "COLOR_SWATCH") {
       swatchHtml = choice.hexColor
         ? `<span class="aig-choice-chip-swatch" style="background:${escapeHtml(choice.hexColor)}"></span>`

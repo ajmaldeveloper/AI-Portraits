@@ -432,6 +432,25 @@ textarea.aig-control {
   );
 }
 
+/* A choice's own uploaded image renders larger than a plain color dot
+   and keeps the option's own configured shape (Horizontal/Vertical)
+   instead of a circle — background-size (cover vs contain) is set
+   inline per option (Fill/Original), everything else stays fixed. */
+.aig-choice-chip-swatch--image {
+  border-radius: 6px;
+  background-color: #f6f6f7;
+}
+
+.aig-choice-chip-swatch--image.aig-choice-chip-swatch--horizontal {
+  width: 64px;
+  height: 40px;
+}
+
+.aig-choice-chip-swatch--image.aig-choice-chip-swatch--vertical {
+  width: 40px;
+  height: 64px;
+}
+
 .aig-choice-chip-label {
   font-size: 13px;
   font-weight: 600;

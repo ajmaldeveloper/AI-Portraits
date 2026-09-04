@@ -22,6 +22,16 @@ export const AXIS_ROLES = [
   { value: "FRAMING", label: "Framing" },
 ] as const;
 
+export const IMAGE_ORIENTATIONS = [
+  { value: "HORIZONTAL", label: "Horizontal" },
+  { value: "VERTICAL", label: "Vertical" },
+] as const;
+
+export const IMAGE_FITS = [
+  { value: "FILL", label: "Fill" },
+  { value: "ORIGINAL", label: "Original" },
+] as const;
+
 export type OptionChoiceView = {
   id: string;
   label: string;
@@ -42,6 +52,8 @@ export type OptionView = {
   label: string;
   type: string;
   axisRole: string | null;
+  imageOrientation: string;
+  imageFit: string;
   choices: OptionChoiceView[];
 };
 
@@ -60,12 +72,16 @@ type OptionFormState = {
   label: string;
   type: string;
   axisRole: string;
+  imageOrientation: string;
+  imageFit: string;
 };
 
 const blankOptionValues: OptionFormState = {
   label: "",
   type: "TEXT",
   axisRole: AXIS_ROLE_NONE,
+  imageOrientation: "HORIZONTAL",
+  imageFit: "FILL",
 };
 
 function optionValuesOf(option: OptionView): OptionFormState {
@@ -73,6 +89,8 @@ function optionValuesOf(option: OptionView): OptionFormState {
     label: option.label,
     type: option.type,
     axisRole: option.axisRole ?? AXIS_ROLE_NONE,
+    imageOrientation: option.imageOrientation,
+    imageFit: option.imageFit,
   };
 }
 
@@ -156,6 +174,38 @@ function OptionFormFields({
           </s-option>
         ))}
       </s-select>
+
+      <s-query-container>
+        <s-grid gridTemplateColumns="@container (inline-size > 360px) 1fr 1fr, 1fr" gap="base">
+          <s-select
+            label="Image orientation"
+            name="imageOrientation"
+            value={values.imageOrientation}
+            onChange={(event: Event) => onChange({ imageOrientation: eventValue(event) })}
+            details="How choice images (if any are attached below) are shaped on the storefront."
+          >
+            {IMAGE_ORIENTATIONS.map((entry) => (
+              <s-option key={entry.value} value={entry.value}>
+                {entry.label}
+              </s-option>
+            ))}
+          </s-select>
+
+          <s-select
+            label="Image fit"
+            name="imageFit"
+            value={values.imageFit}
+            onChange={(event: Event) => onChange({ imageFit: eventValue(event) })}
+            details="Fill crops the photo to fill the shape. Original shows the whole photo, uncropped."
+          >
+            {IMAGE_FITS.map((entry) => (
+              <s-option key={entry.value} value={entry.value}>
+                {entry.label}
+              </s-option>
+            ))}
+          </s-select>
+        </s-grid>
+      </s-query-container>
     </s-stack>
   );
 }
@@ -262,7 +312,9 @@ function EditOptionModal({
   const isDirty =
     values.label !== initialValues.label ||
     values.type !== initialValues.type ||
-    values.axisRole !== initialValues.axisRole;
+    values.axisRole !== initialValues.axisRole ||
+    values.imageOrientation !== initialValues.imageOrientation ||
+    values.imageFit !== initialValues.imageFit;
 
   return (
     <s-modal id={`edit-option-${option.id}`} heading={`Edit ${option.label}`}>

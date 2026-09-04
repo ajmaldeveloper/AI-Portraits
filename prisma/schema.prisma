@@ -55,6 +55,24 @@ enum StyleOptionAxisRole {
   FRAMING
 }
 
+// How a choice's own attached image (StyleOptionChoice.imageAssetId)
+// renders as a storefront swatch — purely presentational, set once per
+// option (not per choice) so every choice under it stays visually
+// consistent. Meaningless when no choice under the option has an
+// image at all.
+enum StyleOptionImageOrientation {
+  HORIZONTAL
+  VERTICAL
+}
+
+// FILL crops the image to completely cover the swatch shape (like CSS
+// object-fit: cover); ORIGINAL shows the whole image uncropped,
+// possibly with empty space around it (like object-fit: contain).
+enum StyleOptionImageFit {
+  FILL
+  ORIGINAL
+}
+
 enum GenerationPurpose {
   STYLE_PRODUCT
   CUSTOMER_PREVIEW
@@ -106,8 +124,8 @@ model Style {
 
   // Shopify product draft configuration.
   productTitle       String
-  productDescription String  @default("")
-  basePrice          Decimal @default(0)
+  productDescription String   @default("")
+  basePrice          Decimal  @default(0)
   compareAtPrice     Decimal?
   tags               Json
   collectionIds      Json
@@ -296,28 +314,33 @@ model ShopGenerationDefaults {
 //   Independent of type, every choice may also optionally have its
 //   own uploaded image (StyleOptionChoice.imageAssetId) — not a
 //   separate type, just an optional attachment any choice can carry.
+//   imageOrientation/imageFit control how that image renders as a
+//   swatch — set once per option (not per choice), and meaningless
+//   unless at least one choice actually has an image.
 model StyleOption {
   id String @id @default(cuid())
 
   styleId String
 
-  label    String
-  type     StyleOptionType
-  axisRole StyleOptionAxisRole?
-  position Int                  @default(0)
+  label            String
+  type             StyleOptionType
+  axisRole         StyleOptionAxisRole?
+  imageOrientation StyleOptionImageOrientation @default(HORIZONTAL)
+  imageFit         StyleOptionImageFit         @default(FILL)
+  position         Int                         @default(0)
 
   style   Style               @relation(fields: [styleId], references: [id], onDelete: Cascade)
   choices StyleOptionChoice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  @@unique([styleId, label])
-  @@index([styleId, position])
   // At most one StyleOption per style may have axisRole SIZE, and at
   // most one may have axisRole FRAMING — enforced in application code
   // (style-options.server.ts), since Postgres partial-unique indexes
   // aren't expressible in Prisma's schema DSL.
+
+  @@unique([styleId, label])
+  @@index([styleId, position])
 }
 
 // One selectable value under a StyleOption. Which fields are
@@ -350,10 +373,10 @@ model StyleOptionChoice {
   // axisRole FRAMING option. All optional — null falls back to the
   // storefront CSS's own defaults, so setting these is opt-in per
   // choice, not required.
-  borderThicknessPx Int?
-  matThicknessPx    Int?
-  borderRadiusPx    Int?
-  position          Int @default(0)
+  borderThicknessPx   Int?
+  matThicknessPx      Int?
+  borderRadiusPx      Int?
+  position            Int      @default(0)
 
   option     StyleOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
   imageAsset StyleAsset? @relation(fields: [imageAssetId], references: [id], onDelete: SetNull)
