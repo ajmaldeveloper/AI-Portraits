@@ -634,11 +634,18 @@ class AiArtGenerator extends HTMLElement {
   // just before and after — the customer can keep changing Size/
   // Framing/Mat color while the artwork is being generated, and the
   // price stays accurate the whole time.
+  // Spinner/status first, options below — unlike the form and result
+  // views (where options are the main thing to interact with, so they
+  // lead), the options panel here can be tall enough on its own to
+  // push the "Generating…" feedback below the fold, making it look
+  // like nothing is happening. There's no photo to review yet at this
+  // point, so the spinner is the one thing that actually needs to be
+  // immediately visible without scrolling.
   renderStatus(message) {
     this.innerHTML = `
-      ${this.renderOptionsHtml()}
       <div class="aig-spinner" role="status"></div>
       <p class="aig-status-text">${escapeHtml(message)}</p>
+      ${this.renderOptionsHtml()}
     `;
 
     this.wireOptionChips();
