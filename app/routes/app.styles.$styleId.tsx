@@ -8,10 +8,12 @@ import {
 } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
+import { StyleDesignPanel } from "../components/styles/style-design-panel";
 import { StyleStatusBadge } from "../components/styles/style-status-badge";
 import {
   requireStyleForShop,
   styleCanBeDeleted,
+  styleCanBeEdited,
 } from "../services/styles/style.server";
 import { getStyleReadiness } from "../services/styles/style-readiness.server";
 import { authenticate } from "../shopify.server";
@@ -60,6 +62,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       status: style.status,
 
       canDelete: styleCanBeDeleted(style),
+      editable: styleCanBeEdited(style),
 
       fieldsCount: style.fields.length,
 
@@ -68,6 +71,13 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       tagsCount: stringArray(style.tags).length,
 
       collectionsCount: stringArray(style.collectionIds).length,
+
+      swatchWidthPx: style.swatchWidthPx,
+      swatchHeightPx: style.swatchHeightPx,
+      swatchFontSizePx: style.swatchFontSizePx,
+      swatchWidthMobilePx: style.swatchWidthMobilePx,
+      swatchHeightMobilePx: style.swatchHeightMobilePx,
+      swatchFontSizeMobilePx: style.swatchFontSizeMobilePx,
     },
 
     readiness: getStyleReadiness(style),
@@ -212,6 +222,9 @@ export default function StyleWorkspace() {
               position: "sticky",
               top: 16,
               alignSelf: "start",
+              display: "flex",
+              flexDirection: "column",
+              gap: 16,
             }}
           >
             <s-section heading="What's left to finish">
@@ -269,6 +282,21 @@ export default function StyleWorkspace() {
                 ))}
               </s-stack>
             </s-section>
+
+            {active === "options" ? (
+              <StyleDesignPanel
+                styleId={style.id}
+                editable={style.editable}
+                values={{
+                  swatchWidthPx: style.swatchWidthPx,
+                  swatchHeightPx: style.swatchHeightPx,
+                  swatchFontSizePx: style.swatchFontSizePx,
+                  swatchWidthMobilePx: style.swatchWidthMobilePx,
+                  swatchHeightMobilePx: style.swatchHeightMobilePx,
+                  swatchFontSizeMobilePx: style.swatchFontSizeMobilePx,
+                }}
+              />
+            ) : null}
           </div>
         </s-grid>
       </s-stack>

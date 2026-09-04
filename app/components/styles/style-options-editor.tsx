@@ -54,12 +54,6 @@ export type OptionView = {
   axisRole: string | null;
   imageOrientation: string;
   imageFit: string;
-  swatchWidthPx: number | null;
-  swatchHeightPx: number | null;
-  swatchFontSizePx: number | null;
-  swatchWidthMobilePx: number | null;
-  swatchHeightMobilePx: number | null;
-  swatchFontSizeMobilePx: number | null;
   choices: OptionChoiceView[];
 };
 
@@ -80,12 +74,6 @@ type OptionFormState = {
   axisRole: string;
   imageOrientation: string;
   imageFit: string;
-  swatchWidthPx: string;
-  swatchHeightPx: string;
-  swatchFontSizePx: string;
-  swatchWidthMobilePx: string;
-  swatchHeightMobilePx: string;
-  swatchFontSizeMobilePx: string;
 };
 
 const blankOptionValues: OptionFormState = {
@@ -94,12 +82,6 @@ const blankOptionValues: OptionFormState = {
   axisRole: AXIS_ROLE_NONE,
   imageOrientation: "HORIZONTAL",
   imageFit: "FILL",
-  swatchWidthPx: "",
-  swatchHeightPx: "",
-  swatchFontSizePx: "",
-  swatchWidthMobilePx: "",
-  swatchHeightMobilePx: "",
-  swatchFontSizeMobilePx: "",
 };
 
 function optionValuesOf(option: OptionView): OptionFormState {
@@ -109,18 +91,6 @@ function optionValuesOf(option: OptionView): OptionFormState {
     axisRole: option.axisRole ?? AXIS_ROLE_NONE,
     imageOrientation: option.imageOrientation,
     imageFit: option.imageFit,
-    swatchWidthPx: option.swatchWidthPx !== null ? String(option.swatchWidthPx) : "",
-    swatchHeightPx: option.swatchHeightPx !== null ? String(option.swatchHeightPx) : "",
-    swatchFontSizePx:
-      option.swatchFontSizePx !== null ? String(option.swatchFontSizePx) : "",
-    swatchWidthMobilePx:
-      option.swatchWidthMobilePx !== null ? String(option.swatchWidthMobilePx) : "",
-    swatchHeightMobilePx:
-      option.swatchHeightMobilePx !== null ? String(option.swatchHeightMobilePx) : "",
-    swatchFontSizeMobilePx:
-      option.swatchFontSizeMobilePx !== null
-        ? String(option.swatchFontSizeMobilePx)
-        : "",
   };
 }
 
@@ -140,29 +110,6 @@ function validateOptionForm(
     otherLabels.some((existing) => existing.toLowerCase() === label.toLowerCase())
   ) {
     errors.label = "An option with this name already exists.";
-  }
-
-  const positiveIntFields: Array<keyof OptionFormState> = [
-    "swatchWidthPx",
-    "swatchHeightPx",
-    "swatchFontSizePx",
-    "swatchWidthMobilePx",
-    "swatchHeightMobilePx",
-    "swatchFontSizeMobilePx",
-  ];
-
-  for (const field of positiveIntFields) {
-    const raw = values[field].trim();
-
-    if (!raw) {
-      continue;
-    }
-
-    const parsed = Number(raw);
-
-    if (!Number.isInteger(parsed) || parsed < 1) {
-      errors[field] = "Must be a positive whole number of pixels.";
-    }
   }
 
   return errors;
@@ -257,96 +204,6 @@ function OptionFormFields({
               </s-option>
             ))}
           </s-select>
-        </s-grid>
-      </s-query-container>
-
-      <s-text type="strong">Swatch size (desktop)</s-text>
-
-      <s-query-container>
-        <s-grid gridTemplateColumns="@container (inline-size > 480px) 1fr 1fr 1fr, 1fr" gap="base">
-          <s-number-field
-            label="Width (px)"
-            name="swatchWidthPx"
-            value={values.swatchWidthPx}
-            onInput={(event: Event) => onChange({ swatchWidthPx: eventValue(event) })}
-            min={1}
-            step={1}
-            suffix="px"
-            autocomplete="off"
-            placeholder={values.imageOrientation === "VERTICAL" ? "40" : "64"}
-            error={errors.swatchWidthPx}
-          />
-
-          <s-number-field
-            label="Height (px)"
-            name="swatchHeightPx"
-            value={values.swatchHeightPx}
-            onInput={(event: Event) => onChange({ swatchHeightPx: eventValue(event) })}
-            min={1}
-            step={1}
-            suffix="px"
-            autocomplete="off"
-            placeholder={values.imageOrientation === "VERTICAL" ? "64" : "40"}
-            error={errors.swatchHeightPx}
-          />
-
-          <s-number-field
-            label="Label font size (px)"
-            name="swatchFontSizePx"
-            value={values.swatchFontSizePx}
-            onInput={(event: Event) => onChange({ swatchFontSizePx: eventValue(event) })}
-            min={1}
-            step={1}
-            suffix="px"
-            autocomplete="off"
-            placeholder="13"
-            error={errors.swatchFontSizePx}
-          />
-        </s-grid>
-      </s-query-container>
-
-      <s-text type="strong">Swatch size (mobile)</s-text>
-
-      <s-query-container>
-        <s-grid gridTemplateColumns="@container (inline-size > 480px) 1fr 1fr 1fr, 1fr" gap="base">
-          <s-number-field
-            label="Width (px)"
-            name="swatchWidthMobilePx"
-            value={values.swatchWidthMobilePx}
-            onInput={(event: Event) => onChange({ swatchWidthMobilePx: eventValue(event) })}
-            min={1}
-            step={1}
-            suffix="px"
-            autocomplete="off"
-            placeholder="same as desktop"
-            error={errors.swatchWidthMobilePx}
-          />
-
-          <s-number-field
-            label="Height (px)"
-            name="swatchHeightMobilePx"
-            value={values.swatchHeightMobilePx}
-            onInput={(event: Event) => onChange({ swatchHeightMobilePx: eventValue(event) })}
-            min={1}
-            step={1}
-            suffix="px"
-            autocomplete="off"
-            placeholder="same as desktop"
-            error={errors.swatchHeightMobilePx}
-          />
-
-          <s-number-field
-            label="Label font size (px)"
-            name="swatchFontSizeMobilePx"
-            value={values.swatchFontSizeMobilePx}
-            onInput={(event: Event) => onChange({ swatchFontSizeMobilePx: eventValue(event) })}
-            min={1}
-            step={1}
-            suffix="px"
-            autocomplete="off"
-            placeholder="same as desktop"
-            error={errors.swatchFontSizeMobilePx}
-          />
         </s-grid>
       </s-query-container>
     </s-stack>

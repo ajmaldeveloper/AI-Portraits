@@ -21,6 +21,16 @@ export type CreateStyleDraftInput = {
 
   generationSettings?: Prisma.InputJsonValue;
   productSettings?: Prisma.InputJsonValue;
+
+  // Storefront swatch styling — global to the whole Style, applying
+  // uniformly to every Product option's choice swatches. See these
+  // same fields' comment on the Style Prisma model.
+  swatchWidthPx?: number | null;
+  swatchHeightPx?: number | null;
+  swatchFontSizePx?: number | null;
+  swatchWidthMobilePx?: number | null;
+  swatchHeightMobilePx?: number | null;
+  swatchFontSizeMobilePx?: number | null;
 };
 
 export type UpdateStyleDraftInput = Partial<CreateStyleDraftInput>;
@@ -73,6 +83,20 @@ function normalizeOptionalText(value: string | null | undefined) {
 function validatePreviewCount(value: number) {
   if (!Number.isInteger(value) || value < 1 || value > 4) {
     throw new Error("Preview count must be an integer between 1 and 4.");
+  }
+
+  return value;
+}
+
+// null/blank stays null (falls back to the storefront's own default);
+// anything else must be a real, positive whole pixel count.
+function normalizeOptionalPositiveInt(value: number | null, fieldName: string) {
+  if (value === null) {
+    return null;
+  }
+
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${fieldName} must be a positive whole number of pixels.`);
   }
 
   return value;
@@ -387,6 +411,42 @@ export async function updateStyleDraft(
 
   if (input.productSettings !== undefined) {
     data.productSettings = input.productSettings;
+  }
+
+  if (input.swatchWidthPx !== undefined) {
+    data.swatchWidthPx = normalizeOptionalPositiveInt(input.swatchWidthPx, "Swatch width");
+  }
+
+  if (input.swatchHeightPx !== undefined) {
+    data.swatchHeightPx = normalizeOptionalPositiveInt(input.swatchHeightPx, "Swatch height");
+  }
+
+  if (input.swatchFontSizePx !== undefined) {
+    data.swatchFontSizePx = normalizeOptionalPositiveInt(
+      input.swatchFontSizePx,
+      "Swatch font size",
+    );
+  }
+
+  if (input.swatchWidthMobilePx !== undefined) {
+    data.swatchWidthMobilePx = normalizeOptionalPositiveInt(
+      input.swatchWidthMobilePx,
+      "Mobile swatch width",
+    );
+  }
+
+  if (input.swatchHeightMobilePx !== undefined) {
+    data.swatchHeightMobilePx = normalizeOptionalPositiveInt(
+      input.swatchHeightMobilePx,
+      "Mobile swatch height",
+    );
+  }
+
+  if (input.swatchFontSizeMobilePx !== undefined) {
+    data.swatchFontSizeMobilePx = normalizeOptionalPositiveInt(
+      input.swatchFontSizeMobilePx,
+      "Mobile swatch font size",
+    );
   }
 
   return prisma.style.update({

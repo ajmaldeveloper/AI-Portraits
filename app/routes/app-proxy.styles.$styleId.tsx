@@ -63,6 +63,17 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       name: style.name,
       basePrice: style.basePrice.toString(),
 
+      // Swatch box size / label font size — global to the whole
+      // Style, applying uniformly to every option's choice swatches
+      // (not settable per option). null means "use the storefront's
+      // own built-in default."
+      swatchWidthPx: style.swatchWidthPx,
+      swatchHeightPx: style.swatchHeightPx,
+      swatchFontSizePx: style.swatchFontSizePx,
+      swatchWidthMobilePx: style.swatchWidthMobilePx,
+      swatchHeightMobilePx: style.swatchHeightMobilePx,
+      swatchFontSizeMobilePx: style.swatchFontSizeMobilePx,
+
       // Only what the storefront form needs to render itself — never
       // the transformation prompt, which is proprietary to the
       // merchant.
@@ -102,12 +113,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         axisRole: option.axisRole,
         imageOrientation: option.imageOrientation,
         imageFit: option.imageFit,
-        swatchWidthPx: option.swatchWidthPx,
-        swatchHeightPx: option.swatchHeightPx,
-        swatchFontSizePx: option.swatchFontSizePx,
-        swatchWidthMobilePx: option.swatchWidthMobilePx,
-        swatchHeightMobilePx: option.swatchHeightMobilePx,
-        swatchFontSizeMobilePx: option.swatchFontSizeMobilePx,
         choices: option.choices.map((choice) => ({
           id: choice.id,
           label: choice.label,

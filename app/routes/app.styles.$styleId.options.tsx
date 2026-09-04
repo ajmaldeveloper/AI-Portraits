@@ -20,7 +20,11 @@ import {
   updateStyleOption,
   updateStyleOptionChoice,
 } from "../services/styles/style-options.server";
-import { requireStyleForShop, styleCanBeEdited } from "../services/styles/style.server";
+import {
+  requireStyleForShop,
+  styleCanBeEdited,
+  updateStyleDraft,
+} from "../services/styles/style.server";
 import { authenticate } from "../shopify.server";
 import { useNavigatingTo } from "../utils/use-navigating-to";
 
@@ -80,12 +84,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       axisRole: option.axisRole,
       imageOrientation: option.imageOrientation,
       imageFit: option.imageFit,
-      swatchWidthPx: option.swatchWidthPx,
-      swatchHeightPx: option.swatchHeightPx,
-      swatchFontSizePx: option.swatchFontSizePx,
-      swatchWidthMobilePx: option.swatchWidthMobilePx,
-      swatchHeightMobilePx: option.swatchHeightMobilePx,
-      swatchFontSizeMobilePx: option.swatchFontSizeMobilePx,
       choices: option.choices.map((choice) => ({
         id: choice.id,
         label: choice.label,
@@ -129,12 +127,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         axisRole: rawAxisRole && rawAxisRole !== AXIS_ROLE_NONE ? rawAxisRole : null,
         imageOrientation: formValue(formData, "imageOrientation"),
         imageFit: formValue(formData, "imageFit"),
-        swatchWidthPx: numberValue(formData, "swatchWidthPx"),
-        swatchHeightPx: numberValue(formData, "swatchHeightPx"),
-        swatchFontSizePx: numberValue(formData, "swatchFontSizePx"),
-        swatchWidthMobilePx: numberValue(formData, "swatchWidthMobilePx"),
-        swatchHeightMobilePx: numberValue(formData, "swatchHeightMobilePx"),
-        swatchFontSizeMobilePx: numberValue(formData, "swatchFontSizeMobilePx"),
       };
 
       if (intent === "addOption") {
@@ -148,6 +140,23 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       await syncPricingBestEffort(admin, session.shop);
 
       return redirect(`/app/styles/${styleId}/options?notice=option-saved`);
+    }
+
+    // Swatch box size / label font size, global to every Product
+    // option on this Style — not tied to any one option, so it's
+    // saved via the same partial-update path as any other Style
+    // field rather than the per-option service.
+    if (intent === "saveDesign") {
+      await updateStyleDraft(session.shop, styleId, {
+        swatchWidthPx: numberValue(formData, "swatchWidthPx"),
+        swatchHeightPx: numberValue(formData, "swatchHeightPx"),
+        swatchFontSizePx: numberValue(formData, "swatchFontSizePx"),
+        swatchWidthMobilePx: numberValue(formData, "swatchWidthMobilePx"),
+        swatchHeightMobilePx: numberValue(formData, "swatchHeightMobilePx"),
+        swatchFontSizeMobilePx: numberValue(formData, "swatchFontSizeMobilePx"),
+      });
+
+      return redirect(`/app/styles/${styleId}/options?notice=design-saved`);
     }
 
     if (intent === "deleteOption") {
@@ -267,6 +276,7 @@ const notices: Record<string, string> = {
   "choice-saved": "Choice saved",
   "choice-deleted": "Choice deleted",
   "choices-reordered": "Choices reordered",
+  "design-saved": "Design saved",
 };
 
 export default function StyleOptions() {

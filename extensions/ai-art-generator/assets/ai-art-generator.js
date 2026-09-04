@@ -31,6 +31,16 @@ class AiArtGenerator extends HTMLElement {
 
     this.basePrice = "0";
 
+    // Swatch box size / label font size — global to the whole Style,
+    // applying uniformly to every option's choice swatches (not set
+    // per option). null = use the built-in default.
+    this.swatchWidthPx = null;
+    this.swatchHeightPx = null;
+    this.swatchFontSizePx = null;
+    this.swatchWidthMobilePx = null;
+    this.swatchHeightMobilePx = null;
+    this.swatchFontSizeMobilePx = null;
+
     // Every Product option on this Style — any option's choices may
     // optionally carry a price (priceDelta) — see
     // app-proxy.styles.$styleId.tsx for the exact shape.
@@ -258,6 +268,12 @@ class AiArtGenerator extends HTMLElement {
 
       this.fields = payload.fields || [];
       this.basePrice = payload.basePrice || "0";
+      this.swatchWidthPx = payload.swatchWidthPx ?? null;
+      this.swatchHeightPx = payload.swatchHeightPx ?? null;
+      this.swatchFontSizePx = payload.swatchFontSizePx ?? null;
+      this.swatchWidthMobilePx = payload.swatchWidthMobilePx ?? null;
+      this.swatchHeightMobilePx = payload.swatchHeightMobilePx ?? null;
+      this.swatchFontSizeMobilePx = payload.swatchFontSizeMobilePx ?? null;
       this.options = payload.options || [];
       this.selectedChoices = this.defaultSelections();
 
@@ -711,7 +727,20 @@ class AiArtGenerator extends HTMLElement {
       </div>
     `;
 
-    return `<div class="aig-options">${groupsHtml}${priceSummaryHtml}</div>`;
+    // Swatch box size and label font size are global to the whole
+    // Style, so they're set once here (inherited by every descendant
+    // chip/swatch below via CSS custom property inheritance) rather
+    // than recomputed and duplicated on each individual chip.
+    const styleVars = cssVars({
+      "--aig-swatch-w": pxOrNull(this.swatchWidthPx),
+      "--aig-swatch-h": pxOrNull(this.swatchHeightPx),
+      "--aig-swatch-font": pxOrNull(this.swatchFontSizePx),
+      "--aig-swatch-w-mobile": pxOrNull(this.swatchWidthMobilePx),
+      "--aig-swatch-h-mobile": pxOrNull(this.swatchHeightMobilePx),
+      "--aig-swatch-font-mobile": pxOrNull(this.swatchFontSizeMobilePx),
+    });
+
+    return `<div class="aig-options" ${styleVars ? `style="${styleVars}"` : ""}>${groupsHtml}${priceSummaryHtml}</div>`;
   }
 
   renderOptionGroupHtml(option) {
@@ -749,28 +778,12 @@ class AiArtGenerator extends HTMLElement {
 
       const backgroundSize = option.imageFit === "ORIGINAL" ? "contain" : "cover";
 
-      const swatchVars = cssVars({
-        "--aig-swatch-w": pxOrNull(option.swatchWidthPx),
-        "--aig-swatch-h": pxOrNull(option.swatchHeightPx),
-        "--aig-swatch-w-mobile": pxOrNull(option.swatchWidthMobilePx),
-        "--aig-swatch-h-mobile": pxOrNull(option.swatchHeightMobilePx),
-      });
-
-      swatchHtml = `<span class="aig-choice-chip-swatch aig-choice-chip-swatch--image ${orientationClass}" style="background-image:url('${choice.imageUrl}');background-size:${backgroundSize};${swatchVars}"></span>`;
+      swatchHtml = `<span class="aig-choice-chip-swatch aig-choice-chip-swatch--image ${orientationClass}" style="background-image:url('${choice.imageUrl}');background-size:${backgroundSize}"></span>`;
     } else if (option.type === "COLOR_SWATCH") {
       swatchHtml = choice.hexColor
         ? `<span class="aig-choice-chip-swatch" style="background:${escapeHtml(choice.hexColor)}"></span>`
         : `<span class="aig-choice-chip-swatch aig-choice-chip-swatch--none"></span>`;
     }
-
-    // Font size cascades from the button to its own label span (CSS
-    // custom properties inherit), so it's set once here rather than on
-    // the label directly — it applies to every choice under this
-    // option, not just image-bearing ones.
-    const fontVars = cssVars({
-      "--aig-swatch-font": pxOrNull(option.swatchFontSizePx),
-      "--aig-swatch-font-mobile": pxOrNull(option.swatchFontSizeMobilePx),
-    });
 
     return `
       <button
@@ -779,7 +792,6 @@ class AiArtGenerator extends HTMLElement {
         data-aig-option="${escapeHtml(option.id)}"
         data-aig-choice="${escapeHtml(choice.id)}"
         aria-pressed="${selected}"
-        ${fontVars ? `style="${fontVars}"` : ""}
       >
         ${swatchHtml}
         <span class="aig-choice-chip-label">${escapeHtml(choice.label)}</span>
