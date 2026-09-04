@@ -10,7 +10,7 @@ import { requireStyleForShop, styleCanBeEdited } from "./style.server";
 // generalized to branch on type/role/axisRole instead of being one
 // hardcoded shape per file.
 
-export const STYLE_OPTION_TYPES = ["TEXT", "COLOR_SWATCH", "IMAGE_SWATCH"] as const;
+export const STYLE_OPTION_TYPES = ["TEXT", "COLOR_SWATCH"] as const;
 export type StyleOptionTypeValue = (typeof STYLE_OPTION_TYPES)[number];
 
 export const STYLE_OPTION_AXIS_ROLES = ["SIZE", "FRAMING"] as const;
@@ -29,7 +29,7 @@ export type StyleOptionChoiceInput = {
   requiresShipping: boolean;
   scalePercent: number | null;
   hexColor: string | null;
-  frameImageAssetId: string | null;
+  imageAssetId: string | null;
   borderThicknessPx: number | null;
   matThicknessPx: number | null;
   borderRadiusPx: number | null;
@@ -346,25 +346,18 @@ async function validateChoiceInput(
     hexColor = value || null;
   }
 
-  // Uploaded image only means anything for an IMAGE_SWATCH-type
-  // option — required there, for any axis (a Size choice can show its
-  // own reference photo the same way a Framing choice shows its own
-  // texture). Frame thickness, though, only means anything on the one
-  // Framing axis — required there (a texture with no thickness set
-  // makes no sense to render as a border), meaningless everywhere
-  // else.
-  let frameImageAssetId: string | null = null;
-  let borderThicknessPx: number | null = null;
+  // Uploaded image is always optional, for any choice regardless of
+  // type or axis — a plain reference photo everywhere except the one
+  // axisRole FRAMING option, where it doubles as an uploaded frame
+  // texture (rendered via CSS border-image). If provided, it must be
+  // a real, already-uploaded asset belonging to this Style.
+  let imageAssetId: string | null = null;
 
-  if (option.type === "IMAGE_SWATCH") {
-    frameImageAssetId = input.frameImageAssetId?.trim() || null;
+  const rawImageAssetId = input.imageAssetId?.trim() || null;
 
-    if (!frameImageAssetId) {
-      throw new Error("Upload an image.");
-    }
-
+  if (rawImageAssetId) {
     const asset = await prisma.styleAsset.findFirst({
-      where: { id: frameImageAssetId, styleId: option.styleId, kind: "FRAME_TEXTURE" },
+      where: { id: rawImageAssetId, styleId: option.styleId, kind: "FRAME_TEXTURE" },
       select: { id: true },
     });
 
@@ -372,33 +365,24 @@ async function validateChoiceInput(
       throw new Error("That image was not found.");
     }
 
-    if (option.axisRole === "FRAMING") {
-      const thickness = input.borderThicknessPx;
-
-      if (!Number.isInteger(thickness) || thickness === null || thickness < 1) {
-        throw new Error("Frame thickness must be a positive whole number of pixels.");
-      }
-
-      borderThicknessPx = thickness;
-    }
+    imageAssetId = rawImageAssetId;
   }
 
-  // Frame thickness (for a COLOR_SWATCH choice — an IMAGE_SWATCH
-  // choice's is already required above), mat gap width, and corner
-  // radius only ever mean anything on the one Framing axis, and are
-  // always optional — null falls back to the storefront CSS's own
-  // default look, so a merchant only sets these when they want to
-  // override it.
+  // Frame thickness, mat gap width, and corner radius only ever mean
+  // anything on the one Framing axis, and are always optional — null
+  // falls back to the storefront CSS's own default look, so a
+  // merchant only sets these when they want to override it. Frame
+  // thickness applies whether the border renders from hexColor,
+  // imageAssetId, or both.
+  let borderThicknessPx: number | null = null;
   let matThicknessPx: number | null = null;
   let borderRadiusPx: number | null = null;
 
   if (option.axisRole === "FRAMING") {
-    if (option.type === "COLOR_SWATCH") {
-      borderThicknessPx = normalizeOptionalPositiveInt(
-        input.borderThicknessPx,
-        "Frame thickness",
-      );
-    }
+    borderThicknessPx = normalizeOptionalPositiveInt(
+      input.borderThicknessPx,
+      "Frame thickness",
+    );
 
     matThicknessPx = normalizeOptionalPositiveInt(
       input.matThicknessPx,
@@ -418,7 +402,7 @@ async function validateChoiceInput(
     requiresShipping,
     scalePercent,
     hexColor,
-    frameImageAssetId,
+    imageAssetId,
     borderThicknessPx,
     matThicknessPx,
     borderRadiusPx,
@@ -504,7 +488,7 @@ export async function createStyleOptionChoice(
       requiresShipping: normalized.requiresShipping,
       scalePercent: normalized.scalePercent,
       hexColor: normalized.hexColor,
-      frameImageAssetId: normalized.frameImageAssetId,
+      imageAssetId: normalized.imageAssetId,
       borderThicknessPx: normalized.borderThicknessPx,
       matThicknessPx: normalized.matThicknessPx,
       borderRadiusPx: normalized.borderRadiusPx,
@@ -548,7 +532,7 @@ export async function updateStyleOptionChoice(
       requiresShipping: normalized.requiresShipping,
       scalePercent: normalized.scalePercent,
       hexColor: normalized.hexColor,
-      frameImageAssetId: normalized.frameImageAssetId,
+      imageAssetId: normalized.imageAssetId,
       borderThicknessPx: normalized.borderThicknessPx,
       matThicknessPx: normalized.matThicknessPx,
       borderRadiusPx: normalized.borderRadiusPx,

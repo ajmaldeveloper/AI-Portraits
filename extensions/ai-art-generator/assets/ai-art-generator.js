@@ -101,7 +101,7 @@ class AiArtGenerator extends HTMLElement {
       const framingChoice = this.selectedFramingChoice();
 
       const isFramed = Boolean(
-        framingChoice?.hexColor || framingChoice?.frameImageUrl,
+        framingChoice?.hexColor || framingChoice?.imageUrl,
       );
 
       // Shopify hides any property whose key starts with "_" from the
@@ -141,8 +141,8 @@ class AiArtGenerator extends HTMLElement {
       // color, it (and any extra color choice, e.g. Mat color) is
       // passed through so the linked copy has the same mat + frame
       // border composited in as what was actually ordered — see
-      // media.style-assets.$assetId.ts. Uploaded-texture (IMAGE_SWATCH)
-      // frames aren't baked into the linked file (see that route's own
+      // media.style-assets.$assetId.ts. An uploaded frame texture
+      // isn't baked into the linked file (see that route's own
       // comment on the scope boundary). The link itself still downloads
       // on click (Content-Disposition: attachment on the redirect
       // target).
@@ -735,14 +735,18 @@ class AiArtGenerator extends HTMLElement {
 
     const priceHtml = choicePriceHtml(choice);
 
+    // A choice's own uploaded image (any option, any type) takes
+    // priority as the chip's swatch; a Color swatch option without an
+    // image falls back to its flat hex color, or an empty ring for "no
+    // color" (e.g. a Framing "No Frame" choice).
     let swatchHtml = "";
 
-    if (option.type === "COLOR_SWATCH") {
+    if (choice.imageUrl) {
+      swatchHtml = `<span class="aig-choice-chip-swatch" style="background-image:url('${choice.imageUrl}')"></span>`;
+    } else if (option.type === "COLOR_SWATCH") {
       swatchHtml = choice.hexColor
         ? `<span class="aig-choice-chip-swatch" style="background:${escapeHtml(choice.hexColor)}"></span>`
         : `<span class="aig-choice-chip-swatch aig-choice-chip-swatch--none"></span>`;
-    } else if (option.type === "IMAGE_SWATCH" && choice.frameImageUrl) {
-      swatchHtml = `<span class="aig-choice-chip-swatch" style="background-image:url('${choice.frameImageUrl}')"></span>`;
     }
 
     return `
@@ -789,8 +793,8 @@ class AiArtGenerator extends HTMLElement {
 
   // Resolves the currently-selected Framing choice and draws (or
   // clears) the CSS border + mat ring around the result image
-  // accordingly — a Framing choice only carries a hexColor/
-  // frameImageUrl when it's an actual physical frame (e.g. not a "No
+  // accordingly — a Framing choice only carries a hexColor/imageUrl
+  // when it's an actual physical frame (e.g. not a "No
   // Frame" row), so this naturally shows the frame/mat only when a
   // real framed choice is selected. Safe to call any time — a no-op
   // before a result exists.
@@ -804,7 +808,7 @@ class AiArtGenerator extends HTMLElement {
     const framingChoice = this.selectedFramingChoice();
 
     const isFramed = Boolean(
-      framingChoice?.hexColor || framingChoice?.frameImageUrl,
+      framingChoice?.hexColor || framingChoice?.imageUrl,
     );
 
     wrap.classList.remove("aig-framed", "aig-framed-image");
@@ -840,10 +844,10 @@ class AiArtGenerator extends HTMLElement {
       wrap.style.setProperty("--aig-frame-radius", `${framingChoice.borderRadiusPx}px`);
     }
 
-    if (framingChoice.frameImageUrl) {
+    if (framingChoice.imageUrl) {
       wrap.style.setProperty(
         "--aig-frame-image",
-        `url("${framingChoice.frameImageUrl}")`,
+        `url("${framingChoice.imageUrl}")`,
       );
       wrap.classList.add("aig-framed-image");
 

@@ -91,8 +91,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       // to request for the result image (scalePercent) and holds each
       // size's own absolute price rather than a delta; axisRole
       // "FRAMING" additionally drives the visual frame preview
-      // (hexColor/frameImageUrl/thickness/mat/radius) and whether the
-      // order needs physical shipping.
+      // (hexColor/imageUrl/thickness/mat/radius) and whether the
+      // order needs physical shipping. imageUrl is available on any
+      // choice, any axis — a plain reference photo everywhere except
+      // Framing, where it doubles as an uploaded frame texture.
       options: style.options.map((option) => ({
         id: option.id,
         label: option.label,
@@ -106,10 +108,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
           requiresShipping: choice.requiresShipping,
           scalePercent: choice.scalePercent,
           hexColor: choice.hexColor,
-          frameImageUrl: choice.frameImageAssetId
+          imageUrl: choice.imageAssetId
             ? createSignedStyleAssetUrl(
                 request.url,
-                choice.frameImageAssetId,
+                choice.imageAssetId,
                 session.shop,
               )
             : null,

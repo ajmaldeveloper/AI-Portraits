@@ -48,7 +48,6 @@ enum StyleAssetKind {
 enum StyleOptionType {
   TEXT
   COLOR_SWATCH
-  IMAGE_SWATCH
 }
 
 enum StyleOptionAxisRole {
@@ -181,8 +180,8 @@ model StyleAsset {
   generation Generation? @relation(fields: [generationId], references: [id], onDelete: SetNull)
 
   // Back-relation only — a FRAME_TEXTURE-kind asset referenced by a
-  // StyleOptionChoice's own frameImageAssetId FK.
-  framingChoices StyleOptionChoice[]
+  // StyleOptionChoice's own imageAssetId FK.
+  optionChoices StyleOptionChoice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -288,13 +287,15 @@ model ShopGenerationDefaults {
 //   media.style-assets.$assetId.ts) and must keep at least one choice
 //   at 100%; its priceDelta is each size's own absolute price, not a
 //   delta. FRAMING marks the one axis whose choices may carry
-//   requiresShipping/a visual frame (color or uploaded image) — the
-//   only axis that can make an order require physical shipping. Every
-//   other option (axisRole null) — including one with priced
+//   requiresShipping/a visual frame (color and/or uploaded image) —
+//   the only axis that can make an order require physical shipping.
+//   Every other option (axisRole null) — including one with priced
 //   choices — is just a plain add-on, e.g. Mat color.
-// - type controls how a choice is edited/rendered: TEXT (plain
-//   labeled buttons), COLOR_SWATCH (hex color), IMAGE_SWATCH
-//   (merchant-uploaded texture, rendered via CSS border-image).
+// - type controls whether a choice's hexColor is editable: TEXT
+//   (plain labeled buttons) or COLOR_SWATCH (also has a color).
+//   Independent of type, every choice may also optionally have its
+//   own uploaded image (StyleOptionChoice.imageAssetId) — not a
+//   separate type, just an optional attachment any choice can carry.
 model StyleOption {
   id String @id @default(cuid())
 
@@ -322,13 +323,17 @@ model StyleOption {
 // One selectable value under a StyleOption. Which fields are
 // meaningful depends entirely on the parent option's type/axisRole
 // (see StyleOption's own comment) — e.g. hexColor only when the
-// parent's type is COLOR_SWATCH. priceDelta is always optional
-// (null = this choice never affects price) except on the one
-// axisRole SIZE option, where it's required and holds that size's own
-// absolute price rather than a delta. id is what the Cart Transform
-// Function's pricing config keys selections against (see
-// style-pricing-sync.server.ts), so renaming a choice's label later
-// doesn't lose track of its price.
+// parent's type is COLOR_SWATCH. imageAssetId is always optional and
+// available on every choice regardless of type — a plain thumbnail
+// (e.g. a Size choice's own reference photo) everywhere except the
+// one axisRole FRAMING option, where it doubles as an uploaded frame
+// texture (rendered via CSS border-image) and pairs with
+// borderThicknessPx. priceDelta is always optional (null = this
+// choice never affects price) except on the one axisRole SIZE option,
+// where it's required and holds that size's own absolute price rather
+// than a delta. id is what the Cart Transform Function's pricing
+// config keys selections against (see style-pricing-sync.server.ts),
+// so renaming a choice's label later doesn't lose track of its price.
 model StyleOptionChoice {
   id String @id @default(cuid())
 
@@ -340,27 +345,25 @@ model StyleOptionChoice {
   requiresShipping    Boolean  @default(false)
   scalePercent        Int?
   hexColor            String?
-  frameImageAssetId   String?
+  imageAssetId        String?
   // The three below are meaningful only for a choice under the one
-  // axisRole FRAMING option — regardless of COLOR_SWATCH vs
-  // IMAGE_SWATCH type (both get a real frame border; only the border
-  // fill differs). All optional — null falls back to the storefront
-  // CSS's own defaults, so setting these is opt-in per choice, not
-  // required.
+  // axisRole FRAMING option. All optional — null falls back to the
+  // storefront CSS's own defaults, so setting these is opt-in per
+  // choice, not required.
   borderThicknessPx Int?
   matThicknessPx    Int?
   borderRadiusPx    Int?
   position          Int @default(0)
 
-  option          StyleOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
-  frameImageAsset StyleAsset? @relation(fields: [frameImageAssetId], references: [id], onDelete: SetNull)
+  option     StyleOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  imageAsset StyleAsset? @relation(fields: [imageAssetId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([optionId, label])
   @@index([optionId, position])
-  @@index([frameImageAssetId])
+  @@index([imageAssetId])
 }
 
 // Shopify's standard offline/online session model remains independent from

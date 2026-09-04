@@ -9,7 +9,6 @@ import { eventValue } from "../../utils/event-value";
 export const OPTION_TYPES = [
   { value: "TEXT", label: "Text" },
   { value: "COLOR_SWATCH", label: "Color swatch" },
-  { value: "IMAGE_SWATCH", label: "Image swatch" },
 ] as const;
 
 // A real (non-empty) sentinel for "no axis" — s-select/s-option don't
@@ -31,8 +30,8 @@ export type OptionChoiceView = {
   requiresShipping: boolean;
   scalePercent: number | null;
   hexColor: string;
-  frameImageAssetId: string | null;
-  frameImageUrl: string | null;
+  imageAssetId: string | null;
+  imageUrl: string | null;
   borderThicknessPx: number | null;
   matThicknessPx: number | null;
   borderRadiusPx: number | null;
@@ -127,7 +126,7 @@ function OptionFormFields({
         name="type"
         value={values.type}
         onChange={(event: Event) => onChange({ type: eventValue(event) })}
-        details="How each choice looks to customers: Text is a plain labeled button (e.g. 8 x 10 in), Color swatch is a clickable color circle, Image swatch is a photo you upload for each choice."
+        details="How each choice looks to customers: Text is a plain labeled button (e.g. 8 x 10 in), Color swatch is a clickable color circle. Either way, every choice can also have its own photo — set that per choice below."
       >
         {OPTION_TYPES.map((entry) => (
           <s-option key={entry.value} value={entry.value}>
@@ -419,23 +418,13 @@ function validateChoiceForm(
     errors.hexColor = "Enter a valid hex color (e.g. #1a1a1a).";
   }
 
-  // Frame thickness only means anything for the Framing axis — an
-  // IMAGE_SWATCH choice elsewhere (e.g. a Size thumbnail) is just a
-  // plain reference image, no border to size.
-  if (option.type === "IMAGE_SWATCH" && option.axisRole === "FRAMING") {
-    const thickness = Number(values.borderThicknessPx);
-
-    if (!Number.isInteger(thickness) || thickness < 1) {
-      errors.borderThicknessPx = "Frame thickness must be a positive whole number of pixels.";
-    }
-  }
-
-  // Thickness (for a COLOR_SWATCH choice), mat gap, and corner radius
-  // are all optional on the Framing axis — blank just means "use the
-  // storefront's own default look" — only the format is checked when
-  // something was actually entered.
+  // Frame thickness, mat gap, and corner radius are all optional on
+  // the Framing axis, whether the border renders from a hex color, an
+  // uploaded image, or both — blank just means "use the storefront's
+  // own default look" — only the format is checked when something was
+  // actually entered.
   if (option.axisRole === "FRAMING") {
-    if (option.type === "COLOR_SWATCH" && values.borderThicknessPx.trim()) {
+    if (values.borderThicknessPx.trim()) {
       const thickness = Number(values.borderThicknessPx);
 
       if (!Number.isInteger(thickness) || thickness < 1) {
@@ -467,14 +456,14 @@ function ChoiceFormFields({
   option,
   values,
   errors,
-  frameImageUrl,
+  imageUrl,
   onChange,
   onFileChange,
 }: {
   option: OptionView;
   values: ChoiceFormState;
   errors: ChoiceFormErrors;
-  frameImageUrl: string | null;
+  imageUrl: string | null;
   onChange: (patch: Partial<ChoiceFormState>) => void;
   onFileChange: (file: File | null) => void;
 }) {
@@ -559,24 +548,28 @@ function ChoiceFormFields({
         />
       ) : null}
 
-      {option.type === "IMAGE_SWATCH" ? (
-        <s-stack direction="block" gap="small-200">
-          {frameImageUrl ? (
-            <img
-              src={frameImageUrl}
-              alt="Current uploaded image"
-              style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 6, border: "1px solid #e1e3e5" }}
-            />
-          ) : null}
+      <s-stack direction="block" gap="small-200">
+        <s-text type="strong">Image (optional)</s-text>
 
-          <input
-            type="file"
-            name="frameImageFile"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            onChange={(event) => onFileChange(event.currentTarget.files?.[0] ?? null)}
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt="Current uploaded image"
+            style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 6, border: "1px solid #e1e3e5" }}
           />
+        ) : null}
 
-          {option.axisRole === "FRAMING" ? (
+        <input
+          type="file"
+          name="imageFile"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          onChange={(event) => onFileChange(event.currentTarget.files?.[0] ?? null)}
+        />
+      </s-stack>
+
+      {option.axisRole === "FRAMING" ? (
+        <s-query-container>
+          <s-grid gridTemplateColumns="@container (inline-size > 360px) 1fr 1fr, 1fr" gap="base">
             <s-number-field
               label="Frame thickness (px)"
               name="borderThicknessPx"
@@ -587,29 +580,8 @@ function ChoiceFormFields({
               suffix="px"
               autocomplete="off"
               error={errors.borderThicknessPx}
-              details="How wide this frame texture renders around the artwork."
+              details="Leave empty for the default (26px)."
             />
-          ) : null}
-        </s-stack>
-      ) : null}
-
-      {option.axisRole === "FRAMING" ? (
-        <s-query-container>
-          <s-grid gridTemplateColumns="@container (inline-size > 360px) 1fr 1fr, 1fr" gap="base">
-            {option.type === "COLOR_SWATCH" ? (
-              <s-number-field
-                label="Frame thickness (px)"
-                name="borderThicknessPx"
-                value={values.borderThicknessPx}
-                onInput={(event: Event) => onChange({ borderThicknessPx: eventValue(event) })}
-                min={1}
-                step={1}
-                suffix="px"
-                autocomplete="off"
-                error={errors.borderThicknessPx}
-                details="Leave empty for the default (26px)."
-              />
-            ) : null}
 
             <s-number-field
               label="Mat thickness (px)"
@@ -681,10 +653,6 @@ function AddChoiceModal({
         onSubmit={(event) => {
           const validationErrors = validateChoiceForm(option, values, existingLabels);
 
-          if (option.type === "IMAGE_SWATCH" && !file) {
-            validationErrors.borderThicknessPx = validationErrors.borderThicknessPx || "Upload a frame texture image.";
-          }
-
           if (Object.keys(validationErrors).length > 0) {
             event.preventDefault();
             setErrors(validationErrors);
@@ -699,7 +667,7 @@ function AddChoiceModal({
             option={option}
             values={values}
             errors={errors}
-            frameImageUrl={null}
+            imageUrl={null}
             onChange={(patch) => {
               setValues((current) => ({ ...current, ...patch }));
               setErrors((current) => {
@@ -760,10 +728,6 @@ function EditChoiceModal({
         onSubmit={(event) => {
           const validationErrors = validateChoiceForm(option, values, otherLabels);
 
-          if (option.type === "IMAGE_SWATCH" && !file && !choice.frameImageAssetId) {
-            validationErrors.borderThicknessPx = validationErrors.borderThicknessPx || "Upload a frame texture image.";
-          }
-
           if (Object.keys(validationErrors).length > 0) {
             event.preventDefault();
             setErrors(validationErrors);
@@ -776,14 +740,14 @@ function EditChoiceModal({
         <input type="hidden" name="intent" value="editChoice" />
         <input type="hidden" name="optionId" value={option.id} />
         <input type="hidden" name="choiceId" value={choice.id} />
-        <input type="hidden" name="existingFrameImageAssetId" value={choice.frameImageAssetId ?? ""} />
+        <input type="hidden" name="existingImageAssetId" value={choice.imageAssetId ?? ""} />
 
         <s-stack direction="block" gap="base">
           <ChoiceFormFields
             option={option}
             values={values}
             errors={errors}
-            frameImageUrl={choice.frameImageUrl}
+            imageUrl={choice.imageUrl}
             onChange={(patch) => {
               setValues((current) => ({ ...current, ...patch }));
               setErrors((current) => {
@@ -914,9 +878,9 @@ function SortableChoiceRow({
               />
             ) : null}
 
-            {option.type === "IMAGE_SWATCH" && choice.frameImageUrl ? (
+            {choice.imageUrl ? (
               <img
-                src={choice.frameImageUrl}
+                src={choice.imageUrl}
                 alt=""
                 style={{ width: 20, height: 20, objectFit: "cover", borderRadius: 4, flex: "0 0 auto" }}
               />

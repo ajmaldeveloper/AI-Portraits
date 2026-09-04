@@ -540,9 +540,9 @@ export async function uploadStyleProductImages(
  * reading a persisted "selected" flag: nothing about which box is
  * checked is ever written to the database until Remove is pressed.
  */
-// A single frame-texture image for an IMAGE_SWATCH-type StyleOption
-// choice — a separate, dedicated pool from the product photo gallery
-// (kind FRAME_TEXTURE, not PRODUCT_GENERATED/PRODUCT_SELECTED), so it
+// A single optional image attached to any StyleOptionChoice — a
+// separate, dedicated pool from the product photo gallery (kind
+// FRAME_TEXTURE, not PRODUCT_GENERATED/PRODUCT_SELECTED), so it
 // doesn't count against MAX_STYLE_PRODUCT_IMAGES and never shows up in
 // the Media tab's gallery. Lands immediately usable (no "select this
 // one" step, unlike a product photo) — the merchant picks the file

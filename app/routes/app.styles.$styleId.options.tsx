@@ -86,9 +86,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         requiresShipping: choice.requiresShipping,
         scalePercent: choice.scalePercent,
         hexColor: choice.hexColor ?? "",
-        frameImageAssetId: choice.frameImageAssetId,
-        frameImageUrl: choice.frameImageAssetId
-          ? createSignedStyleAssetUrl(request.url, choice.frameImageAssetId, session.shop)
+        imageAssetId: choice.imageAssetId,
+        imageUrl: choice.imageAssetId
+          ? createSignedStyleAssetUrl(request.url, choice.imageAssetId, session.shop)
           : null,
         borderThicknessPx: choice.borderThicknessPx,
         matThicknessPx: choice.matThicknessPx,
@@ -163,13 +163,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
       // A fresh upload takes precedence over a previously-uploaded
       // asset id carried in a hidden field (editing a choice without
-      // picking a new file keeps the existing texture) — this is the
+      // picking a new file keeps the existing image) — this is the
       // one field that needs a real side effect (a DB write) before
       // the choice itself can be validated/saved, so it happens first
       // and in the same request rather than as a separate round trip.
-      const uploadedFile = formData.get("frameImageFile");
+      const uploadedFile = formData.get("imageFile");
 
-      let frameImageAssetId = formValue(formData, "existingFrameImageAssetId") || null;
+      let imageAssetId = formValue(formData, "existingImageAssetId") || null;
 
       if (uploadedFile instanceof File && uploadedFile.size > 0) {
         const bytes = new Uint8Array(await uploadedFile.arrayBuffer());
@@ -179,7 +179,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
           mimeType: uploadedFile.type || "application/octet-stream",
         });
 
-        frameImageAssetId = asset.id;
+        imageAssetId = asset.id;
       }
 
       const input: StyleOptionChoiceInput = {
@@ -189,7 +189,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         requiresShipping: formData.has("requiresShipping"),
         scalePercent: numberValue(formData, "scalePercent"),
         hexColor: formValue(formData, "hexColor") || null,
-        frameImageAssetId,
+        imageAssetId,
         borderThicknessPx: numberValue(formData, "borderThicknessPx"),
         matThicknessPx: numberValue(formData, "matThicknessPx"),
         borderRadiusPx: numberValue(formData, "borderRadiusPx"),
