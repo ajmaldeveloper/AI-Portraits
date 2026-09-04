@@ -78,6 +78,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       swatchWidthMobilePx: style.swatchWidthMobilePx,
       swatchHeightMobilePx: style.swatchHeightMobilePx,
       swatchFontSizeMobilePx: style.swatchFontSizeMobilePx,
+      swatchGapPx: style.swatchGapPx,
+      swatchBorderColor: style.swatchBorderColor,
+      swatchActiveBorderColor: style.swatchActiveBorderColor,
+      swatchFullBleed: style.swatchFullBleed,
     },
 
     readiness: getStyleReadiness(style),
@@ -294,6 +298,10 @@ export default function StyleWorkspace() {
                   swatchWidthMobilePx: style.swatchWidthMobilePx,
                   swatchHeightMobilePx: style.swatchHeightMobilePx,
                   swatchFontSizeMobilePx: style.swatchFontSizeMobilePx,
+                  swatchGapPx: style.swatchGapPx,
+                  swatchBorderColor: style.swatchBorderColor,
+                  swatchActiveBorderColor: style.swatchActiveBorderColor,
+                  swatchFullBleed: style.swatchFullBleed,
                 }}
               />
             ) : null}

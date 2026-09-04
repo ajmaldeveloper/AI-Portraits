@@ -73,6 +73,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       swatchWidthMobilePx: style.swatchWidthMobilePx,
       swatchHeightMobilePx: style.swatchHeightMobilePx,
       swatchFontSizeMobilePx: style.swatchFontSizeMobilePx,
+      swatchGapPx: style.swatchGapPx,
+      swatchBorderColor: style.swatchBorderColor,
+      swatchActiveBorderColor: style.swatchActiveBorderColor,
+      swatchFullBleed: style.swatchFullBleed,
 
       // Only what the storefront form needs to render itself — never
       // the transformation prompt, which is proprietary to the

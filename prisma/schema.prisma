@@ -151,6 +151,18 @@ model Style {
   swatchHeightMobilePx   Int?
   swatchFontSizeMobilePx Int?
 
+  // Chip spacing/border — same "global to the whole Style" scope as
+  // the sizing fields above. swatchGapPx is the gap between adjacent
+  // choice chips within one option's row. swatchFullBleed, when true,
+  // makes an image-bearing choice's photo fill its entire chip edge-
+  // to-edge (covering the chip's own border) with the label/price
+  // overlaid on top, instead of sitting as a small inset thumbnail
+  // above them — meaningless for a choice with no image.
+  swatchGapPx             Int?
+  swatchBorderColor       String?
+  swatchActiveBorderColor String?
+  swatchFullBleed         Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

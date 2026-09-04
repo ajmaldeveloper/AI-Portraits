@@ -31,6 +31,10 @@ export type CreateStyleDraftInput = {
   swatchWidthMobilePx?: number | null;
   swatchHeightMobilePx?: number | null;
   swatchFontSizeMobilePx?: number | null;
+  swatchGapPx?: number | null;
+  swatchBorderColor?: string | null;
+  swatchActiveBorderColor?: string | null;
+  swatchFullBleed?: boolean;
 };
 
 export type UpdateStyleDraftInput = Partial<CreateStyleDraftInput>;
@@ -100,6 +104,28 @@ function normalizeOptionalPositiveInt(value: number | null, fieldName: string) {
   }
 
   return value;
+}
+
+const hexColorPattern = /^#[0-9a-fA-F]{6}$/;
+
+// null/blank stays null (falls back to the storefront's own default
+// color); anything else must be a real 6-digit hex color.
+function normalizeOptionalHexColor(value: string | null | undefined, fieldName: string) {
+  if (value == null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  if (!hexColorPattern.test(trimmed)) {
+    throw new Error(`${fieldName} must be a valid hex color (e.g. #1a1a1a).`);
+  }
+
+  return trimmed;
 }
 
 export type StyleListSort = "updated_desc" | "updated_asc" | "name_asc";
@@ -447,6 +473,28 @@ export async function updateStyleDraft(
       input.swatchFontSizeMobilePx,
       "Mobile swatch font size",
     );
+  }
+
+  if (input.swatchGapPx !== undefined) {
+    data.swatchGapPx = normalizeOptionalPositiveInt(input.swatchGapPx, "Swatch gap");
+  }
+
+  if (input.swatchBorderColor !== undefined) {
+    data.swatchBorderColor = normalizeOptionalHexColor(
+      input.swatchBorderColor,
+      "Border color",
+    );
+  }
+
+  if (input.swatchActiveBorderColor !== undefined) {
+    data.swatchActiveBorderColor = normalizeOptionalHexColor(
+      input.swatchActiveBorderColor,
+      "Active border color",
+    );
+  }
+
+  if (input.swatchFullBleed !== undefined) {
+    data.swatchFullBleed = input.swatchFullBleed;
   }
 
   return prisma.style.update({

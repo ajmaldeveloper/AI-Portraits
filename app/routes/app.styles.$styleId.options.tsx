@@ -154,6 +154,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         swatchWidthMobilePx: numberValue(formData, "swatchWidthMobilePx"),
         swatchHeightMobilePx: numberValue(formData, "swatchHeightMobilePx"),
         swatchFontSizeMobilePx: numberValue(formData, "swatchFontSizeMobilePx"),
+        swatchGapPx: numberValue(formData, "swatchGapPx"),
+        swatchBorderColor: formValue(formData, "swatchBorderColor") || null,
+        swatchActiveBorderColor: formValue(formData, "swatchActiveBorderColor") || null,
+        swatchFullBleed: formData.has("swatchFullBleed"),
       });
 
       return redirect(`/app/styles/${styleId}/options?notice=design-saved`);

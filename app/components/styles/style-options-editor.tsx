@@ -506,6 +506,7 @@ function ChoiceFormFields({
   imageUrl,
   onChange,
   onFileChange,
+  onRemoveImage,
 }: {
   option: OptionView;
   values: ChoiceFormState;
@@ -513,6 +514,7 @@ function ChoiceFormFields({
   imageUrl: string | null;
   onChange: (patch: Partial<ChoiceFormState>) => void;
   onFileChange: (file: File | null) => void;
+  onRemoveImage?: () => void;
 }) {
   return (
     <s-stack direction="block" gap="base">
@@ -596,11 +598,19 @@ function ChoiceFormFields({
 
       <s-stack direction="block" gap="small-200">
         {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt="Current uploaded image"
-            style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #e1e3e5" }}
-          />
+          <s-stack direction="inline" gap="small-200" alignItems="center">
+            <img
+              src={imageUrl}
+              alt="Current uploaded image"
+              style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #e1e3e5" }}
+            />
+
+            {onRemoveImage ? (
+              <s-button variant="tertiary" tone="critical" onClick={onRemoveImage}>
+                Remove image
+              </s-button>
+            ) : null}
+          </s-stack>
         ) : null}
 
         <s-drop-zone
@@ -768,8 +778,12 @@ function EditChoiceModal({
 
   const [file, setFile] = useState<File | null>(null);
 
+  const [imageRemoved, setImageRemoved] = useState(false);
+
   const isDirty =
-    JSON.stringify(values) !== JSON.stringify(initialValues) || Boolean(file);
+    JSON.stringify(values) !== JSON.stringify(initialValues) ||
+    Boolean(file) ||
+    imageRemoved;
 
   const modalId = `edit-choice-${choice.id}`;
 
@@ -793,14 +807,18 @@ function EditChoiceModal({
         <input type="hidden" name="intent" value="editChoice" />
         <input type="hidden" name="optionId" value={option.id} />
         <input type="hidden" name="choiceId" value={choice.id} />
-        <input type="hidden" name="existingImageAssetId" value={choice.imageAssetId ?? ""} />
+        <input
+          type="hidden"
+          name="existingImageAssetId"
+          value={imageRemoved ? "" : (choice.imageAssetId ?? "")}
+        />
 
         <s-stack direction="block" gap="base">
           <ChoiceFormFields
             option={option}
             values={values}
             errors={errors}
-            imageUrl={choice.imageUrl}
+            imageUrl={imageRemoved ? null : choice.imageUrl}
             onChange={(patch) => {
               setValues((current) => ({ ...current, ...patch }));
               setErrors((current) => {
@@ -811,7 +829,17 @@ function EditChoiceModal({
                 return next;
               });
             }}
-            onFileChange={setFile}
+            onFileChange={(nextFile) => {
+              setFile(nextFile);
+
+              if (nextFile) {
+                setImageRemoved(false);
+              }
+            }}
+            onRemoveImage={() => {
+              setFile(null);
+              setImageRemoved(true);
+            }}
           />
 
           <s-stack direction="inline" gap="base">
@@ -827,6 +855,7 @@ function EditChoiceModal({
                 setValues(initialValues);
                 setErrors({});
                 setFile(null);
+                setImageRemoved(false);
               }}
               disabled={submitting}
             >

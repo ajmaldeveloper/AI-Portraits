@@ -40,6 +40,10 @@ class AiArtGenerator extends HTMLElement {
     this.swatchWidthMobilePx = null;
     this.swatchHeightMobilePx = null;
     this.swatchFontSizeMobilePx = null;
+    this.swatchGapPx = null;
+    this.swatchBorderColor = null;
+    this.swatchActiveBorderColor = null;
+    this.swatchFullBleed = false;
 
     // Every Product option on this Style — any option's choices may
     // optionally carry a price (priceDelta) — see
@@ -274,6 +278,10 @@ class AiArtGenerator extends HTMLElement {
       this.swatchWidthMobilePx = payload.swatchWidthMobilePx ?? null;
       this.swatchHeightMobilePx = payload.swatchHeightMobilePx ?? null;
       this.swatchFontSizeMobilePx = payload.swatchFontSizeMobilePx ?? null;
+      this.swatchGapPx = payload.swatchGapPx ?? null;
+      this.swatchBorderColor = payload.swatchBorderColor ?? null;
+      this.swatchActiveBorderColor = payload.swatchActiveBorderColor ?? null;
+      this.swatchFullBleed = Boolean(payload.swatchFullBleed);
       this.options = payload.options || [];
       this.selectedChoices = this.defaultSelections();
 
@@ -738,9 +746,14 @@ class AiArtGenerator extends HTMLElement {
       "--aig-swatch-w-mobile": pxOrNull(this.swatchWidthMobilePx),
       "--aig-swatch-h-mobile": pxOrNull(this.swatchHeightMobilePx),
       "--aig-swatch-font-mobile": pxOrNull(this.swatchFontSizeMobilePx),
+      "--aig-chip-gap": pxOrNull(this.swatchGapPx),
+      "--aig-chip-border": this.swatchBorderColor || null,
+      "--aig-chip-border-active": this.swatchActiveBorderColor || null,
     });
 
-    return `<div class="aig-options" ${styleVars ? `style="${styleVars}"` : ""}>${groupsHtml}${priceSummaryHtml}</div>`;
+    const fullBleedClass = this.swatchFullBleed ? " aig-options--full-bleed" : "";
+
+    return `<div class="aig-options${fullBleedClass}" ${styleVars ? `style="${styleVars}"` : ""}>${groupsHtml}${priceSummaryHtml}</div>`;
   }
 
   renderOptionGroupHtml(option) {
@@ -770,6 +783,8 @@ class AiArtGenerator extends HTMLElement {
     // color" (e.g. a Framing "No Frame" choice).
     let swatchHtml = "";
 
+    const fullBleed = this.swatchFullBleed && Boolean(choice.imageUrl);
+
     if (choice.imageUrl) {
       const orientationClass =
         option.imageOrientation === "VERTICAL"
@@ -778,7 +793,9 @@ class AiArtGenerator extends HTMLElement {
 
       const backgroundSize = option.imageFit === "ORIGINAL" ? "contain" : "cover";
 
-      swatchHtml = `<span class="aig-choice-chip-swatch aig-choice-chip-swatch--image ${orientationClass}" style="background-image:url('${choice.imageUrl}');background-size:${backgroundSize}"></span>`;
+      const fullBleedClass = fullBleed ? " aig-choice-chip-swatch--full-bleed" : "";
+
+      swatchHtml = `<span class="aig-choice-chip-swatch aig-choice-chip-swatch--image ${orientationClass}${fullBleedClass}" style="background-image:url('${choice.imageUrl}');background-size:${backgroundSize}"></span>`;
     } else if (option.type === "COLOR_SWATCH") {
       swatchHtml = choice.hexColor
         ? `<span class="aig-choice-chip-swatch" style="background:${escapeHtml(choice.hexColor)}"></span>`
@@ -788,7 +805,7 @@ class AiArtGenerator extends HTMLElement {
     return `
       <button
         type="button"
-        class="aig-choice-chip"
+        class="aig-choice-chip${fullBleed ? " aig-choice-chip--full-bleed" : ""}"
         data-aig-option="${escapeHtml(option.id)}"
         data-aig-choice="${escapeHtml(choice.id)}"
         aria-pressed="${selected}"

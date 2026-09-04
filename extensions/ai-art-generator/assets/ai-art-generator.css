@@ -388,13 +388,16 @@ textarea.aig-control {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-start;
-  gap: 8px;
+  gap: var(--aig-chip-gap, 8px);
 }
 
 /* One shape for every option type — Size (text + price), Framing
    (color swatch or uploaded texture thumbnail + price), Mat color
    (color swatch, no price) — so switching an option's type never
-   needs a different interaction pattern on the storefront. */
+   needs a different interaction pattern on the storefront.
+   --aig-chip-border/--aig-chip-border-active are merchant-configurable
+   (Product options tab), falling back to this widget's own border/
+   focus colors when not set. */
 .aig-choice-chip {
   display: flex;
   flex-direction: column;
@@ -407,7 +410,7 @@ textarea.aig-control {
   text-align: center;
   cursor: pointer;
   background: #ffffff;
-  border: 1px solid var(--aig-border);
+  border: 1px solid var(--aig-chip-border, var(--aig-border));
   border-radius: var(--aig-radius);
   transition:
     border-color 140ms ease,
@@ -415,13 +418,65 @@ textarea.aig-control {
 }
 
 .aig-choice-chip:hover {
-  border-color: var(--aig-focus);
+  border-color: var(--aig-chip-border-active, var(--aig-focus));
 }
 
 .aig-choice-chip[aria-pressed="true"] {
   background: #f6f6f7;
-  border-color: var(--aig-focus);
-  box-shadow: 0 0 0 1px var(--aig-focus);
+  border-color: var(--aig-chip-border-active, var(--aig-focus));
+  box-shadow: 0 0 0 1px var(--aig-chip-border-active, var(--aig-focus));
+}
+
+/* Full-bleed mode (Swatch design > "Full-bleed image swatches") — the
+   image fills the entire chip, covering its border, with the label/
+   price overlaid on top instead of stacked below a small thumbnail.
+   Only applied to choices that actually have an image; a plain color/
+   text choice under the same option keeps the normal layout. */
+.aig-choice-chip--full-bleed {
+  position: relative;
+  min-width: var(--aig-swatch-w, 120px);
+  min-height: var(--aig-swatch-h, 120px);
+  padding: 0;
+  overflow: hidden;
+  border: none;
+  box-shadow: 0 0 0 1px var(--aig-chip-border, var(--aig-border));
+}
+
+@media (max-width: 749px) {
+  .aig-choice-chip--full-bleed {
+    min-width: var(--aig-swatch-w-mobile, var(--aig-swatch-w, 120px));
+    min-height: var(--aig-swatch-h-mobile, var(--aig-swatch-h, 120px));
+  }
+}
+
+.aig-choice-chip--full-bleed:hover,
+.aig-choice-chip--full-bleed[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--aig-chip-border-active, var(--aig-focus));
+}
+
+.aig-choice-chip--full-bleed::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent 55%);
+  pointer-events: none;
+}
+
+.aig-choice-chip--full-bleed .aig-choice-chip-label,
+.aig-choice-chip--full-bleed .aig-choice-chip-price {
+  position: relative;
+  z-index: 1;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.aig-choice-chip--full-bleed .aig-choice-chip-label {
+  margin-top: auto;
+  padding: 0 8px;
+}
+
+.aig-choice-chip--full-bleed .aig-choice-chip-price {
+  padding: 0 8px 8px;
 }
 
 .aig-choice-chip-swatch {
@@ -465,6 +520,19 @@ textarea.aig-control {
 .aig-choice-chip-swatch--image.aig-choice-chip-swatch--vertical {
   width: var(--aig-swatch-w, 40px);
   height: var(--aig-swatch-h, 64px);
+}
+
+/* Overrides the fixed orientation sizing above (and its own mobile
+   breakpoint override further down — !important since both share this
+   selector's specificity) — fills the whole chip (which is
+   position: relative via .aig-choice-chip--full-bleed) rather than
+   sitting as an inset box of its own, at every viewport width. */
+.aig-choice-chip-swatch--image.aig-choice-chip-swatch--full-bleed {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0 !important;
 }
 
 .aig-choice-chip-label {
