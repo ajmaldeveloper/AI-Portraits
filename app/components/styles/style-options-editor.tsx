@@ -127,6 +127,7 @@ function OptionFormFields({
         name="type"
         value={values.type}
         onChange={(event: Event) => onChange({ type: eventValue(event) })}
+        details="How each choice looks to customers: Text is a plain labeled button (e.g. 8 x 10 in), Color swatch is a clickable color circle, Image swatch is a photo you upload for each choice."
       >
         {OPTION_TYPES.map((entry) => (
           <s-option key={entry.value} value={entry.value}>
@@ -418,7 +419,10 @@ function validateChoiceForm(
     errors.hexColor = "Enter a valid hex color (e.g. #1a1a1a).";
   }
 
-  if (option.type === "IMAGE_SWATCH") {
+  // Frame thickness only means anything for the Framing axis — an
+  // IMAGE_SWATCH choice elsewhere (e.g. a Size thumbnail) is just a
+  // plain reference image, no border to size.
+  if (option.type === "IMAGE_SWATCH" && option.axisRole === "FRAMING") {
     const thickness = Number(values.borderThicknessPx);
 
     if (!Number.isInteger(thickness) || thickness < 1) {
@@ -560,7 +564,7 @@ function ChoiceFormFields({
           {frameImageUrl ? (
             <img
               src={frameImageUrl}
-              alt="Current frame texture"
+              alt="Current uploaded image"
               style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 6, border: "1px solid #e1e3e5" }}
             />
           ) : null}
@@ -572,17 +576,20 @@ function ChoiceFormFields({
             onChange={(event) => onFileChange(event.currentTarget.files?.[0] ?? null)}
           />
 
-          <s-number-field
-            label="Frame thickness (px)"
-            name="borderThicknessPx"
-            value={values.borderThicknessPx}
-            onInput={(event: Event) => onChange({ borderThicknessPx: eventValue(event) })}
-            min={1}
-            step={1}
-            suffix="px"
-            autocomplete="off"
-            error={errors.borderThicknessPx}
-          />
+          {option.axisRole === "FRAMING" ? (
+            <s-number-field
+              label="Frame thickness (px)"
+              name="borderThicknessPx"
+              value={values.borderThicknessPx}
+              onInput={(event: Event) => onChange({ borderThicknessPx: eventValue(event) })}
+              min={1}
+              step={1}
+              suffix="px"
+              autocomplete="off"
+              error={errors.borderThicknessPx}
+              details="How wide this frame texture renders around the artwork."
+            />
+          ) : null}
         </s-stack>
       ) : null}
 

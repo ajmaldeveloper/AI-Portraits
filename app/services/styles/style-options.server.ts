@@ -346,9 +346,13 @@ async function validateChoiceInput(
     hexColor = value || null;
   }
 
-  // Uploaded texture only means anything for an IMAGE_SWATCH-type
-  // option — required there (a texture with no thickness set makes no
-  // sense to render).
+  // Uploaded image only means anything for an IMAGE_SWATCH-type
+  // option — required there, for any axis (a Size choice can show its
+  // own reference photo the same way a Framing choice shows its own
+  // texture). Frame thickness, though, only means anything on the one
+  // Framing axis — required there (a texture with no thickness set
+  // makes no sense to render as a border), meaningless everywhere
+  // else.
   let frameImageAssetId: string | null = null;
   let borderThicknessPx: number | null = null;
 
@@ -356,7 +360,7 @@ async function validateChoiceInput(
     frameImageAssetId = input.frameImageAssetId?.trim() || null;
 
     if (!frameImageAssetId) {
-      throw new Error("Upload a frame texture image.");
+      throw new Error("Upload an image.");
     }
 
     const asset = await prisma.styleAsset.findFirst({
@@ -365,16 +369,18 @@ async function validateChoiceInput(
     });
 
     if (!asset) {
-      throw new Error("That frame texture image was not found.");
+      throw new Error("That image was not found.");
     }
 
-    const thickness = input.borderThicknessPx;
+    if (option.axisRole === "FRAMING") {
+      const thickness = input.borderThicknessPx;
 
-    if (!Number.isInteger(thickness) || thickness === null || thickness < 1) {
-      throw new Error("Frame thickness must be a positive whole number of pixels.");
+      if (!Number.isInteger(thickness) || thickness === null || thickness < 1) {
+        throw new Error("Frame thickness must be a positive whole number of pixels.");
+      }
+
+      borderThicknessPx = thickness;
     }
-
-    borderThicknessPx = thickness;
   }
 
   // Frame thickness (for a COLOR_SWATCH choice — an IMAGE_SWATCH

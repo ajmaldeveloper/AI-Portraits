@@ -600,11 +600,19 @@ class AiArtGenerator extends HTMLElement {
     form.insertBefore(banner, form.firstChild);
   }
 
+  // Keeps the options/price panel visible through generation too, not
+  // just before and after — the customer can keep changing Size/
+  // Framing/Mat color while the artwork is being generated, and the
+  // price stays accurate the whole time.
   renderStatus(message) {
     this.innerHTML = `
+      ${this.renderOptionsHtml()}
       <div class="aig-spinner" role="status"></div>
       <p class="aig-status-text">${escapeHtml(message)}</p>
     `;
+
+    this.wireOptionChips();
+    this.updatePriceSummary();
   }
 
   pollGeneration(generationId, attempt) {
@@ -655,10 +663,10 @@ class AiArtGenerator extends HTMLElement {
   renderResult(resultUrl) {
     this.innerHTML = `
       <div class="aig-result">
+        ${this.renderOptionsHtml()}
         <div class="aig-frame-wrap">
           <img src="${resultUrl}" alt="Your personalized artwork" draggable="false" />
         </div>
-        ${this.renderOptionsHtml()}
       </div>
     `;
 
