@@ -289,6 +289,17 @@ export default function StyleOptions() {
     // a temporary invoker button rather than assuming a Cancel button
     // exists inside every modal.
     const closeOpenModals = () => {
+      const invoker = document.createElement("s-button") as HTMLElement & {
+        commandFor?: string;
+        command?: string;
+      };
+
+      invoker.style.display = "none";
+      invoker.command = "--hide";
+      invoker.setAttribute("command", "--hide");
+
+      document.body.appendChild(invoker);
+
       document.querySelectorAll<HTMLElement>("s-modal").forEach((modal) => {
         (modal as HTMLElement & { hideOverlay?: () => void }).hideOverlay?.();
 
@@ -298,27 +309,26 @@ export default function StyleOptions() {
           return;
         }
 
-        const invoker = document.createElement("s-button") as HTMLElement & {
-          commandFor?: string;
-          command?: string;
-        };
-
-        invoker.style.display = "none";
-
-        document.body.appendChild(invoker);
-
         invoker.commandFor = id;
-        invoker.command = "--hide";
         invoker.setAttribute("commandfor", id);
-        invoker.setAttribute("command", "--hide");
-
         invoker.click();
-        invoker.remove();
       });
+
+      invoker.remove();
     };
 
+    // A single immediate attempt (plus one rAF) isn't always enough —
+    // on a slower render the modal's own shadow DOM isn't ready to
+    // respond to the --hide command yet, and it's left open behind the
+    // toast. Retrying across a few animation frames and a couple of
+    // short timeouts costs nothing once the modal's already closed
+    // (closing an already-closed modal is a no-op), so it's safe to be
+    // this persistent.
     closeOpenModals();
     requestAnimationFrame(closeOpenModals);
+    requestAnimationFrame(() => requestAnimationFrame(closeOpenModals));
+    setTimeout(closeOpenModals, 100);
+    setTimeout(closeOpenModals, 400);
 
     shopify.toast.show(message);
 
