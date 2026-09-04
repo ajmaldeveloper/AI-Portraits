@@ -102,6 +102,12 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         axisRole: option.axisRole,
         imageOrientation: option.imageOrientation,
         imageFit: option.imageFit,
+        swatchWidthPx: option.swatchWidthPx,
+        swatchHeightPx: option.swatchHeightPx,
+        swatchFontSizePx: option.swatchFontSizePx,
+        swatchWidthMobilePx: option.swatchWidthMobilePx,
+        swatchHeightMobilePx: option.swatchHeightMobilePx,
+        swatchFontSizeMobilePx: option.swatchFontSizeMobilePx,
         choices: option.choices.map((choice) => ({
           id: choice.id,
           label: choice.label,

@@ -323,7 +323,7 @@ class AiArtGenerator extends HTMLElement {
 
       const choice = this.choiceFor(option);
 
-      if (choice?.hexColor) {
+      if (choice?.hexColor || choice?.imageUrl) {
         return choice;
       }
     }
@@ -749,12 +749,28 @@ class AiArtGenerator extends HTMLElement {
 
       const backgroundSize = option.imageFit === "ORIGINAL" ? "contain" : "cover";
 
-      swatchHtml = `<span class="aig-choice-chip-swatch aig-choice-chip-swatch--image ${orientationClass}" style="background-image:url('${choice.imageUrl}');background-size:${backgroundSize}"></span>`;
+      const swatchVars = cssVars({
+        "--aig-swatch-w": pxOrNull(option.swatchWidthPx),
+        "--aig-swatch-h": pxOrNull(option.swatchHeightPx),
+        "--aig-swatch-w-mobile": pxOrNull(option.swatchWidthMobilePx),
+        "--aig-swatch-h-mobile": pxOrNull(option.swatchHeightMobilePx),
+      });
+
+      swatchHtml = `<span class="aig-choice-chip-swatch aig-choice-chip-swatch--image ${orientationClass}" style="background-image:url('${choice.imageUrl}');background-size:${backgroundSize};${swatchVars}"></span>`;
     } else if (option.type === "COLOR_SWATCH") {
       swatchHtml = choice.hexColor
         ? `<span class="aig-choice-chip-swatch" style="background:${escapeHtml(choice.hexColor)}"></span>`
         : `<span class="aig-choice-chip-swatch aig-choice-chip-swatch--none"></span>`;
     }
+
+    // Font size cascades from the button to its own label span (CSS
+    // custom properties inherit), so it's set once here rather than on
+    // the label directly — it applies to every choice under this
+    // option, not just image-bearing ones.
+    const fontVars = cssVars({
+      "--aig-swatch-font": pxOrNull(option.swatchFontSizePx),
+      "--aig-swatch-font-mobile": pxOrNull(option.swatchFontSizeMobilePx),
+    });
 
     return `
       <button
@@ -763,6 +779,7 @@ class AiArtGenerator extends HTMLElement {
         data-aig-option="${escapeHtml(option.id)}"
         data-aig-choice="${escapeHtml(choice.id)}"
         aria-pressed="${selected}"
+        ${fontVars ? `style="${fontVars}"` : ""}
       >
         ${swatchHtml}
         <span class="aig-choice-chip-label">${escapeHtml(choice.label)}</span>
@@ -825,6 +842,7 @@ class AiArtGenerator extends HTMLElement {
     wrap.style.removeProperty("--aig-mat-thickness");
     wrap.style.removeProperty("--aig-frame-radius");
     wrap.style.removeProperty("--aig-mat-color");
+    wrap.style.removeProperty("--aig-mat-image");
 
     if (!isFramed) {
       return;
@@ -851,25 +869,46 @@ class AiArtGenerator extends HTMLElement {
       wrap.style.setProperty("--aig-frame-radius", `${framingChoice.borderRadiusPx}px`);
     }
 
+    // The frame border itself: an uploaded texture (tiled/repeated via
+    // border-image's own "round" keyword) takes priority over a flat
+    // color when the Framing choice carries both.
     if (framingChoice.imageUrl) {
       wrap.style.setProperty(
         "--aig-frame-image",
         `url("${framingChoice.imageUrl}")`,
       );
       wrap.classList.add("aig-framed-image");
-
-      return;
+    } else {
+      wrap.style.setProperty("--aig-frame-color", framingChoice.hexColor);
+      wrap.classList.add("aig-framed");
     }
 
-    wrap.style.setProperty("--aig-frame-color", framingChoice.hexColor);
-    wrap.classList.add("aig-framed");
-
+    // The mat — independent of how the frame border itself renders
+    // (flat color or texture). Its own uploaded image, tiled as a
+    // repeating background, takes priority over its flat color the
+    // same way the frame's does.
     const matChoice = this.selectedMatColorChoice();
 
-    if (matChoice?.hexColor) {
+    if (matChoice?.imageUrl) {
+      wrap.style.setProperty("--aig-mat-image", `url("${matChoice.imageUrl}")`);
+    } else if (matChoice?.hexColor) {
       wrap.style.setProperty("--aig-mat-color", matChoice.hexColor);
     }
   }
+}
+
+function pxOrNull(value) {
+  return typeof value === "number" ? `${value}px` : null;
+}
+
+// Renders only the entries whose value isn't null, as a plain inline
+// style string — an unset entry means "use the CSS default," so it's
+// left out entirely rather than written as an empty value.
+function cssVars(vars) {
+  return Object.entries(vars)
+    .filter(([, value]) => value !== null)
+    .map(([name, value]) => `${name}:${value}`)
+    .join(";");
 }
 
 function formatMoney(value) {

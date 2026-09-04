@@ -303,10 +303,21 @@ textarea.aig-control {
    supported in every browser; where it's missing, the plain
    border-color fallback (set first, so border-image only overrides it
    where supported) still gives a correct, if flatter, solid frame. */
+/* The mat (padding + background) is shared by both frame variants
+   below — a flat color by default, or the mat choice's own uploaded
+   image tiled as a repeating pattern when one's attached (background-
+   image wins over background-color automatically when both are set,
+   since it paints on top). */
+.aig-frame-wrap.aig-framed,
+.aig-frame-wrap.aig-framed-image {
+  padding: var(--aig-mat-thickness, 18px);
+  background-color: var(--aig-mat-color, #faf8f4);
+  background-image: var(--aig-mat-image, none);
+  background-repeat: repeat;
+}
+
 .aig-frame-wrap.aig-framed {
   border-radius: var(--aig-frame-radius, 0px) !important;
-  padding: var(--aig-mat-thickness, 18px);
-  background: var(--aig-mat-color, #faf8f4);
   border-width: var(--aig-frame-thickness, 26px);
   border-style: solid;
   border-color: var(--aig-frame-color, #2b2b2b);
@@ -328,11 +339,10 @@ textarea.aig-control {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 
-/* Merchant-uploaded frame texture (IMAGE_SWATCH-type Framing choice)
-   instead of a flat CSS color — border-image tiles/stretches the
-   uploaded image across the border area, at the merchant-configured
-   thickness. No mat background here (unlike .aig-framed) since the
-   texture itself is the whole visual, not a color to pair with a mat. */
+/* Merchant-uploaded frame texture instead of a flat CSS color —
+   border-image tiles/stretches the uploaded image across the border
+   area (the "round" keyword repeats it a whole number of times so it
+   doesn't cut off mid-tile), at the merchant-configured thickness. */
 .aig-frame-wrap.aig-framed-image {
   border-radius: var(--aig-frame-radius, 0px) !important;
   border-style: solid;
@@ -435,26 +445,48 @@ textarea.aig-control {
 /* A choice's own uploaded image renders larger than a plain color dot
    and keeps the option's own configured shape (Horizontal/Vertical)
    instead of a circle — background-size (cover vs contain) is set
-   inline per option (Fill/Original), everything else stays fixed. */
+   inline per option (Fill/Original). Width/height/font-size are all
+   merchant-configurable per option (Product options tab), set as
+   inline custom properties on the chip by the storefront JS — the
+   values here are just the built-in defaults when nothing was set,
+   and the mobile breakpoint below only takes effect once a mobile
+   override is actually configured (var() falls back to the desktop
+   value otherwise). */
 .aig-choice-chip-swatch--image {
   border-radius: 6px;
   background-color: #f6f6f7;
 }
 
 .aig-choice-chip-swatch--image.aig-choice-chip-swatch--horizontal {
-  width: 64px;
-  height: 40px;
+  width: var(--aig-swatch-w, 64px);
+  height: var(--aig-swatch-h, 40px);
 }
 
 .aig-choice-chip-swatch--image.aig-choice-chip-swatch--vertical {
-  width: 40px;
-  height: 64px;
+  width: var(--aig-swatch-w, 40px);
+  height: var(--aig-swatch-h, 64px);
 }
 
 .aig-choice-chip-label {
-  font-size: 13px;
+  font-size: var(--aig-swatch-font, 13px);
   font-weight: 600;
   white-space: nowrap;
+}
+
+@media (max-width: 749px) {
+  .aig-choice-chip-swatch--image.aig-choice-chip-swatch--horizontal {
+    width: var(--aig-swatch-w-mobile, var(--aig-swatch-w, 64px));
+    height: var(--aig-swatch-h-mobile, var(--aig-swatch-h, 40px));
+  }
+
+  .aig-choice-chip-swatch--image.aig-choice-chip-swatch--vertical {
+    width: var(--aig-swatch-w-mobile, var(--aig-swatch-w, 40px));
+    height: var(--aig-swatch-h-mobile, var(--aig-swatch-h, 64px));
+  }
+
+  .aig-choice-chip-label {
+    font-size: var(--aig-swatch-font-mobile, var(--aig-swatch-font, 13px));
+  }
 }
 
 .aig-choice-chip-price {

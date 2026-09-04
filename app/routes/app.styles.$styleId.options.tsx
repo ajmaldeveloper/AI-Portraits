@@ -80,6 +80,12 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       axisRole: option.axisRole,
       imageOrientation: option.imageOrientation,
       imageFit: option.imageFit,
+      swatchWidthPx: option.swatchWidthPx,
+      swatchHeightPx: option.swatchHeightPx,
+      swatchFontSizePx: option.swatchFontSizePx,
+      swatchWidthMobilePx: option.swatchWidthMobilePx,
+      swatchHeightMobilePx: option.swatchHeightMobilePx,
+      swatchFontSizeMobilePx: option.swatchFontSizeMobilePx,
       choices: option.choices.map((choice) => ({
         id: choice.id,
         label: choice.label,
@@ -123,6 +129,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         axisRole: rawAxisRole && rawAxisRole !== AXIS_ROLE_NONE ? rawAxisRole : null,
         imageOrientation: formValue(formData, "imageOrientation"),
         imageFit: formValue(formData, "imageFit"),
+        swatchWidthPx: numberValue(formData, "swatchWidthPx"),
+        swatchHeightPx: numberValue(formData, "swatchHeightPx"),
+        swatchFontSizePx: numberValue(formData, "swatchFontSizePx"),
+        swatchWidthMobilePx: numberValue(formData, "swatchWidthMobilePx"),
+        swatchHeightMobilePx: numberValue(formData, "swatchHeightMobilePx"),
+        swatchFontSizeMobilePx: numberValue(formData, "swatchFontSizeMobilePx"),
       };
 
       if (intent === "addOption") {

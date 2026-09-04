@@ -29,6 +29,12 @@ export type StyleOptionInput = {
   axisRole: string | null;
   imageOrientation: string;
   imageFit: string;
+  swatchWidthPx: number | null;
+  swatchHeightPx: number | null;
+  swatchFontSizePx: number | null;
+  swatchWidthMobilePx: number | null;
+  swatchHeightMobilePx: number | null;
+  swatchFontSizeMobilePx: number | null;
 };
 
 export type StyleOptionChoiceInput = {
@@ -125,12 +131,37 @@ function validateOptionInput(input: StyleOptionInput) {
     throw new Error("Choose a valid image fit.");
   }
 
+  const swatchWidthPx = normalizeOptionalPositiveInt(input.swatchWidthPx, "Swatch width");
+  const swatchHeightPx = normalizeOptionalPositiveInt(input.swatchHeightPx, "Swatch height");
+  const swatchFontSizePx = normalizeOptionalPositiveInt(
+    input.swatchFontSizePx,
+    "Swatch font size",
+  );
+  const swatchWidthMobilePx = normalizeOptionalPositiveInt(
+    input.swatchWidthMobilePx,
+    "Mobile swatch width",
+  );
+  const swatchHeightMobilePx = normalizeOptionalPositiveInt(
+    input.swatchHeightMobilePx,
+    "Mobile swatch height",
+  );
+  const swatchFontSizeMobilePx = normalizeOptionalPositiveInt(
+    input.swatchFontSizeMobilePx,
+    "Mobile swatch font size",
+  );
+
   return {
     label,
     type: input.type as StyleOptionTypeValue,
     axisRole: axisRole as StyleOptionAxisRoleValue | null,
     imageOrientation: input.imageOrientation as StyleOptionImageOrientationValue,
     imageFit: input.imageFit as StyleOptionImageFitValue,
+    swatchWidthPx,
+    swatchHeightPx,
+    swatchFontSizePx,
+    swatchWidthMobilePx,
+    swatchHeightMobilePx,
+    swatchFontSizeMobilePx,
   };
 }
 
@@ -206,6 +237,12 @@ export async function createStyleOption(
       axisRole: normalized.axisRole,
       imageOrientation: normalized.imageOrientation,
       imageFit: normalized.imageFit,
+      swatchWidthPx: normalized.swatchWidthPx,
+      swatchHeightPx: normalized.swatchHeightPx,
+      swatchFontSizePx: normalized.swatchFontSizePx,
+      swatchWidthMobilePx: normalized.swatchWidthMobilePx,
+      swatchHeightMobilePx: normalized.swatchHeightMobilePx,
+      swatchFontSizeMobilePx: normalized.swatchFontSizeMobilePx,
       position: (lastOption?.position ?? -1) + 1,
     },
   });
@@ -233,6 +270,12 @@ export async function updateStyleOption(
       axisRole: normalized.axisRole,
       imageOrientation: normalized.imageOrientation,
       imageFit: normalized.imageFit,
+      swatchWidthPx: normalized.swatchWidthPx,
+      swatchHeightPx: normalized.swatchHeightPx,
+      swatchFontSizePx: normalized.swatchFontSizePx,
+      swatchWidthMobilePx: normalized.swatchWidthMobilePx,
+      swatchHeightMobilePx: normalized.swatchHeightMobilePx,
+      swatchFontSizeMobilePx: normalized.swatchFontSizeMobilePx,
     },
   });
 }

@@ -316,7 +316,14 @@ model ShopGenerationDefaults {
 //   separate type, just an optional attachment any choice can carry.
 //   imageOrientation/imageFit control how that image renders as a
 //   swatch — set once per option (not per choice), and meaningless
-//   unless at least one choice actually has an image.
+//   unless at least one choice actually has an image. swatchWidthPx/
+//   swatchHeightPx/swatchFontSizePx (and their *MobilePx twins) are
+//   optional pixel overrides of the storefront's own default swatch
+//   box size and label font size — null means "use the default for
+//   this option's imageOrientation"; the *MobilePx fields further
+//   override the desktop value only below the storefront's mobile
+//   breakpoint, and fall back to the desktop value (not straight to
+//   the built-in default) when left unset.
 model StyleOption {
   id String @id @default(cuid())
 
@@ -327,7 +334,15 @@ model StyleOption {
   axisRole         StyleOptionAxisRole?
   imageOrientation StyleOptionImageOrientation @default(HORIZONTAL)
   imageFit         StyleOptionImageFit         @default(FILL)
-  position         Int                         @default(0)
+
+  swatchWidthPx          Int?
+  swatchHeightPx         Int?
+  swatchFontSizePx       Int?
+  swatchWidthMobilePx    Int?
+  swatchHeightMobilePx   Int?
+  swatchFontSizeMobilePx Int?
+
+  position Int @default(0)
 
   style   Style               @relation(fields: [styleId], references: [id], onDelete: Cascade)
   choices StyleOptionChoice[]
