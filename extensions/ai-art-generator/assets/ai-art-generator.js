@@ -16,10 +16,19 @@
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLL_ATTEMPTS = 90; // ~3 minutes
 
-// Advances roughly every 6s of the simulated progress bar (see
-// startProgressAnimation) — the last one just sticks if a generation
-// runs long rather than looping back to something that reads as
-// regression.
+// A real "high quality" edit commonly runs well past a minute — 40
+// means the simulated progress bar (see startProgressAnimation) hits
+// ~60% around the 30s mark and creeps toward 95% over the following
+// minute or so, rather than blowing past 60% in the first 10s and
+// then sitting still.
+const PROGRESS_TIME_CONSTANT_SECONDS = 40;
+
+// Paced to match: the last message lands around the 50s mark and
+// just sticks from there if the generation runs longer, rather than
+// cycling through all of them (or looping back, which would read as
+// regression) in the first 30s.
+const PROGRESS_MESSAGE_INTERVAL_SECONDS = 10;
+
 const PROGRESS_MESSAGES = [
   "Generating your artwork…",
   "Sketching it out…",
@@ -840,7 +849,10 @@ class AiArtGenerator extends HTMLElement {
   // creeps as it nears 95%, never claiming 100% until the real result
   // actually replaces this whole view), paired with rotating status
   // text so the wait reads as active progress rather than a stalled
-  // spinner.
+  // spinner. The curve's pace (PROGRESS_TIME_CONSTANT_SECONDS) is
+  // tuned to real "high quality" edits, which commonly run well past
+  // a minute — too fast a curve blows past 60% in under 10s and then
+  // sits looking stuck near 95% for the rest of the wait.
   startProgressAnimation() {
     const startedAt = Date.now();
 
@@ -859,7 +871,9 @@ class AiArtGenerator extends HTMLElement {
     this.progressTimer = setInterval(() => {
       const elapsedSeconds = (Date.now() - startedAt) / 1000;
 
-      const percent = Math.round(95 * (1 - Math.exp(-elapsedSeconds / 9)));
+      const percent = Math.round(
+        95 * (1 - Math.exp(-elapsedSeconds / PROGRESS_TIME_CONSTANT_SECONDS)),
+      );
 
       const fill = this.querySelector(".aig-progress-fill");
       const percentText = this.querySelector(".aig-progress-percent");
@@ -873,7 +887,7 @@ class AiArtGenerator extends HTMLElement {
       }
 
       const nextMessageIndex = Math.min(
-        Math.floor(elapsedSeconds / 6),
+        Math.floor(elapsedSeconds / PROGRESS_MESSAGE_INTERVAL_SECONDS),
         PROGRESS_MESSAGES.length - 1,
       );
 
