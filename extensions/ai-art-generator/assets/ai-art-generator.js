@@ -292,20 +292,17 @@ class AiArtGenerator extends HTMLElement {
         );
       }
 
-      // Deliberately NOT a "_"-prefixed key. That convention only
-      // works when a theme's own cart/checkout templates explicitly
-      // filter it out (Shopify's default templates do; many themes'
-      // don't) — it's a per-theme opt-in, not a platform guarantee. On
-      // a theme that doesn't filter it, an underscore key still
-      // renders raw, and on one that does, it's stripped from the
-      // rendered HTML entirely, which is what silently broke this on
-      // some stores: cart-artwork-link.js can only clean up text that
-      // actually made it into the DOM. A plain key is guaranteed to
-      // render everywhere (cart, checkout, order confirmation email)
-      // — cart-artwork-link.js still turns it into a clean "Image"
-      // link/thumbnail wherever this script can run; checkout and the
-      // order email (where it can't) just show the link as plain text,
-      // which is a reasonable fallback rather than a broken one.
+      // A "_"-prefixed key — kept private on any theme whose own
+      // cart/checkout templates respect that convention (Shopify's
+      // default ones do; many custom themes' don't, which is a
+      // per-theme opt-in, not a platform guarantee). On a theme that
+      // does filter it, this property never reaches the rendered HTML
+      // at all, so cart-artwork-link.js has nothing to convert into a
+      // thumbnail there — a real trade-off, but privacy wins over that
+      // gap: better to sometimes not swap the thumbnail than to ever
+      // show a customer their own raw signed-looking URL as plain
+      // cart text on a theme that doesn't filter it and where the
+      // embed happens to not be running.
       //
       // The short redirect link (no query string/signature, beyond an
       // optional frame/mat color) is the value, so even the plain-text
@@ -342,7 +339,7 @@ class AiArtGenerator extends HTMLElement {
         }
 
         event.formData.set(
-          "properties[Your artwork]",
+          "properties[_ai_art_preview]",
           artworkUrl.toString(),
         );
       }
