@@ -4,6 +4,36 @@
 // (style-product-media.server.ts) and the customer-facing one
 // (customer-generation.server.ts).
 
+import sharp from "sharp";
+
+// OpenAI's images/edits endpoint always returns lossless PNG — at
+// "high" quality and a real (non-trivial) photo, that can run into the
+// tens of MB, since PNG compression doesn't help much on
+// photographic/painterly detail. Re-encoding to WebP keeps the same
+// visual quality at a small fraction of the size (a portrait that
+// results in an 18MB PNG typically lands well under 2MB here), and
+// every place that later reads this asset (media.style-assets, the
+// storefront's own <img> tags) already treats mimeType as just
+// whatever's stored, not an assumed PNG — no other change needed.
+export async function compressGeneratedImage(
+  bytes: Uint8Array,
+  quality: number,
+): Promise<{ bytes: Uint8Array; mimeType: string; width: number | null; height: number | null }> {
+  const pipeline = sharp(bytes).webp({ quality });
+
+  const [output, metadata] = await Promise.all([
+    pipeline.toBuffer(),
+    sharp(bytes).metadata(),
+  ]);
+
+  return {
+    bytes: new Uint8Array(output),
+    mimeType: "image/webp",
+    width: metadata.width ?? null,
+    height: metadata.height ?? null,
+  };
+}
+
 export function outputSize(
   aspectRatio: string,
 ): "1024x1024" | "1024x1536" | "1536x1024" {

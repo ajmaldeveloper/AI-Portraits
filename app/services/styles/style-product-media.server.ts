@@ -17,6 +17,7 @@ import {
   generateOpenAIImages,
 } from "../ai/openai-image.server";
 import {
+  compressGeneratedImage,
   outputQuality,
   outputSize,
   pngDimensions,
@@ -94,11 +95,18 @@ async function persistGeneratedImages(input: {
 
   const startPosition = (aggregate._max.position ?? -1) + 1;
 
-  return prisma.$transaction(
-    input.images.map((image, index) => {
-      const dimensions = pngDimensions(image.bytes);
+  // The provider returns lossless PNG, which at real output quality
+  // can run into the tens of MB — re-encoding to WebP (see
+  // compressGeneratedImage) keeps the same visual quality at a
+  // fraction of the size for this product gallery image, same as the
+  // customer-facing result (customer-generation.server.ts).
+  const compressed = await Promise.all(
+    input.images.map((image) => compressGeneratedImage(image.bytes, 85)),
+  );
 
-      return prisma.styleAsset.create({
+  return prisma.$transaction(
+    compressed.map((image, index) =>
+      prisma.styleAsset.create({
         data: {
           styleId: input.styleId,
 
@@ -106,11 +114,11 @@ async function persistGeneratedImages(input: {
 
           kind: StyleAssetKind.PRODUCT_GENERATED,
 
-          mimeType: "image/png",
+          mimeType: image.mimeType,
 
-          width: dimensions.width,
+          width: image.width,
 
-          height: dimensions.height,
+          height: image.height,
 
           altText: `Generated example for ${input.styleName}`,
 
@@ -118,8 +126,8 @@ async function persistGeneratedImages(input: {
 
           binaryData: toDatabaseBytes(image.bytes),
         },
-      });
-    }),
+      }),
+    ),
   );
 }
 

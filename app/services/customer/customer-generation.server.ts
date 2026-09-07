@@ -6,9 +6,9 @@ import {
 
 import prisma from "../../db.server";
 import {
+  compressGeneratedImage,
   outputQuality,
   outputSize,
-  pngDimensions,
   toDatabaseBytes,
 } from "../ai/image-output.server";
 import { OpenAIImageError, editOpenAIImage } from "../ai/openai-image.server";
@@ -250,14 +250,22 @@ async function runCustomerGeneration(input: {
       // (caught inside editOpenAIImage itself) never affects the
       // actual generation.
       onPartialImage: async (partial) => {
+        // Quality 70, not 85 — this is a transient, low-res in-progress
+        // preview the customer never keeps or orders, so a smaller/
+        // faster download during polling matters more here than for
+        // the final result below.
+        const compressed = await compressGeneratedImage(partial.bytes, 70);
+
         const asset = await prisma.styleAsset.create({
           data: {
             styleId: input.styleId,
             generationId: input.generationId,
             kind: StyleAssetKind.CUSTOMER_PARTIAL,
-            mimeType: "image/png",
+            mimeType: compressed.mimeType,
+            width: compressed.width,
+            height: compressed.height,
             altText: `In-progress preview for ${input.styleName}`,
-            binaryData: toDatabaseBytes(partial.bytes),
+            binaryData: toDatabaseBytes(compressed.bytes),
           },
         });
 
@@ -268,18 +276,22 @@ async function runCustomerGeneration(input: {
       },
     });
 
-    const dimensions = pngDimensions(result.image.bytes);
+    // OpenAI returns lossless PNG, which at "high" quality can run into
+    // the tens of MB for a real (non-trivial) photo — re-encoding to
+    // WebP keeps this the customer's actual deliverable at the same
+    // visual quality, just far smaller (see compressGeneratedImage).
+    const compressedResult = await compressGeneratedImage(result.image.bytes, 85);
 
     await prisma.styleAsset.create({
       data: {
         styleId: input.styleId,
         generationId: input.generationId,
         kind: StyleAssetKind.CUSTOMER_RESULT,
-        mimeType: "image/png",
-        width: dimensions.width,
-        height: dimensions.height,
+        mimeType: compressedResult.mimeType,
+        width: compressedResult.width,
+        height: compressedResult.height,
         altText: `Personalized result for ${input.styleName}`,
-        binaryData: toDatabaseBytes(result.image.bytes),
+        binaryData: toDatabaseBytes(compressedResult.bytes),
       },
     });
 
