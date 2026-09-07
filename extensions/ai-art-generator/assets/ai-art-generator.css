@@ -639,29 +639,30 @@ textarea.aig-control {
   font-size: 18px;
 }
 
-.aig-partial-preview {
-  margin-top: 16px;
+.aig-progress {
+  margin: 20px auto 0;
+  max-width: 280px;
+}
+
+.aig-progress-track {
+  height: 6px;
+  overflow: hidden;
+  background: #e9e9eb;
+  border-radius: 999px;
+}
+
+.aig-progress-fill {
+  height: 100%;
+  background: var(--aig-focus);
+  border-radius: 999px;
+  transition: width 300ms ease-out;
+}
+
+.aig-progress-percent {
+  margin-top: 8px;
+  font-size: 15px;
+  font-weight: 650;
   text-align: center;
-}
-
-.aig-partial-preview img {
-  max-width: 100%;
-  display: inline-block;
-  border-radius: var(--aig-radius);
-  /* A soft pulse signals "still refining," not "final" — the same
-     reason ChatGPT's own progressive preview looks slightly hazy
-     rather than crisp until the last frame. */
-  animation: aig-partial-pulse 1600ms ease-in-out infinite;
-}
-
-@keyframes aig-partial-pulse {
-  0%,
-  100% {
-    opacity: 0.7;
-  }
-  50% {
-    opacity: 1;
-  }
 }
 
 .aig-spinner {

@@ -20,7 +20,6 @@ import {
 import {
   createGenerationLedgerEntry,
   markGenerationFailed,
-  markGenerationPartial,
   markGenerationProcessing,
   markGenerationSucceeded,
 } from "../generations/generation.server";
@@ -234,6 +233,12 @@ async function runCustomerGeneration(input: {
   try {
     await markGenerationProcessing(input.shop, input.generationId);
 
+    // onPartialImage (streaming previews) is intentionally not used
+    // here — the storefront shows a simulated progress bar/rotating
+    // status text instead (see ai-art-generator.js's
+    // startProgressAnimation), so paying for the extra streaming
+    // round trips, compression, and storage per partial frame would
+    // be pure overhead with nothing left to display them.
     const result = await editOpenAIImage({
       apiKey: input.apiKey,
       model: input.model || "gpt-image-2",
@@ -241,39 +246,6 @@ async function runCustomerGeneration(input: {
       size: outputSize(input.aspectRatio),
       quality: outputQuality(input.quality),
       image: input.photo,
-
-      // Lets the customer watch the artwork sharpen in stages instead
-      // of staring at a bare spinner for the full ~10-30s edit — see
-      // getCustomerGenerationStatus/the app-proxy generations route,
-      // which surface partialAssetId/partialIndex to the storefront's
-      // poll loop. Best-effort: a failure recording one preview frame
-      // (caught inside editOpenAIImage itself) never affects the
-      // actual generation.
-      onPartialImage: async (partial) => {
-        // Quality 70, not 85 — this is a transient, low-res in-progress
-        // preview the customer never keeps or orders, so a smaller/
-        // faster download during polling matters more here than for
-        // the final result below.
-        const compressed = await compressGeneratedImage(partial.bytes, 70);
-
-        const asset = await prisma.styleAsset.create({
-          data: {
-            styleId: input.styleId,
-            generationId: input.generationId,
-            kind: StyleAssetKind.CUSTOMER_PARTIAL,
-            mimeType: compressed.mimeType,
-            width: compressed.width,
-            height: compressed.height,
-            altText: `In-progress preview for ${input.styleName}`,
-            binaryData: toDatabaseBytes(compressed.bytes),
-          },
-        });
-
-        await markGenerationPartial(input.shop, input.generationId, {
-          partialAssetId: asset.id,
-          partialIndex: partial.index,
-        });
-      },
     });
 
     // OpenAI returns lossless PNG, which at "high" quality can run into

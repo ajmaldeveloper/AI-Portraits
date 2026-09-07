@@ -16,6 +16,19 @@
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLL_ATTEMPTS = 90; // ~3 minutes
 
+// Advances roughly every 6s of the simulated progress bar (see
+// startProgressAnimation) — the last one just sticks if a generation
+// runs long rather than looping back to something that reads as
+// regression.
+const PROGRESS_MESSAGES = [
+  "Generating your artwork…",
+  "Sketching it out…",
+  "Adding details…",
+  "Blending colors…",
+  "Adding final touches…",
+  "Adding a touch of magic…",
+];
+
 // A guest's history is scoped to this browser only (localStorage), per
 // Style so different products never mix; a logged-in customer's is
 // additionally fetched from the server (see fetchServerHistory) and
@@ -201,6 +214,8 @@ class AiArtGenerator extends HTMLElement {
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
     }
+
+    this.stopProgressAnimation();
   }
 
   // Hooks the theme's own native "Add to cart" form directly — same
@@ -268,16 +283,28 @@ class AiArtGenerator extends HTMLElement {
         );
       }
 
-      // The artwork link: kept private (a "_"-prefixed key, which
-      // Shopify hides from the cart, checkout, and order confirmation)
-      // — visible to the merchant in the order's own admin view, not
-      // to the customer. The short redirect link (no query
-      // string/signature, beyond an optional frame/mat color) is the
-      // value, so even there it reads as a clean short URL rather than
-      // a wall of raw text. When the selected Framing choice carries a
-      // color, it (and any extra color choice, e.g. Mat color) is
-      // passed through so the linked copy has the same mat + frame
-      // border composited in as what was actually ordered — see
+      // Deliberately NOT a "_"-prefixed key. That convention only
+      // works when a theme's own cart/checkout templates explicitly
+      // filter it out (Shopify's default templates do; many themes'
+      // don't) — it's a per-theme opt-in, not a platform guarantee. On
+      // a theme that doesn't filter it, an underscore key still
+      // renders raw, and on one that does, it's stripped from the
+      // rendered HTML entirely, which is what silently broke this on
+      // some stores: cart-artwork-link.js can only clean up text that
+      // actually made it into the DOM. A plain key is guaranteed to
+      // render everywhere (cart, checkout, order confirmation email)
+      // — cart-artwork-link.js still turns it into a clean "Image"
+      // link/thumbnail wherever this script can run; checkout and the
+      // order email (where it can't) just show the link as plain text,
+      // which is a reasonable fallback rather than a broken one.
+      //
+      // The short redirect link (no query string/signature, beyond an
+      // optional frame/mat color) is the value, so even the plain-text
+      // fallback reads as a clean short URL rather than a wall of raw
+      // text. When the selected Framing choice carries a color, it
+      // (and any extra color choice, e.g. Mat color) is passed through
+      // so the linked copy has the same mat + frame border composited
+      // in as what was actually ordered — see
       // media.style-assets.$assetId.ts. An uploaded frame texture
       // isn't baked into the linked file (see that route's own
       // comment on the scope boundary). The link itself still downloads
@@ -306,7 +333,7 @@ class AiArtGenerator extends HTMLElement {
         }
 
         event.formData.set(
-          "properties[_ai_art_preview]",
+          "properties[Your artwork]",
           artworkUrl.toString(),
         );
       }
@@ -536,10 +563,14 @@ class AiArtGenerator extends HTMLElement {
   }
 
   renderError(message) {
+    this.stopProgressAnimation();
+
     this.innerHTML = `<div class="aig-error">${escapeHtml(message)}</div>`;
   }
 
   renderForm() {
+    this.stopProgressAnimation();
+
     this.photoFile = null;
 
     const imageField = this.fields.find((field) => field.type === "IMAGE");
@@ -753,7 +784,7 @@ class AiArtGenerator extends HTMLElement {
         return;
       }
 
-      this.renderStatus("Generating your artwork…");
+      this.renderStatus();
 
       this.pollGeneration(payload.generationId, 0);
     } catch {
@@ -783,50 +814,81 @@ class AiArtGenerator extends HTMLElement {
   // Framing/Mat color while the artwork is being generated, and the
   // price stays accurate the whole time. Options lead, spinner/status
   // below, matching renderForm()/renderResult()'s own ordering.
-  renderStatus(message) {
-    this.lastPartialIndex = null;
-
+  renderStatus() {
     this.innerHTML = `
       ${this.renderOptionsHtml()}
-      <div class="aig-partial-preview" hidden></div>
       <div class="aig-spinner" role="status"></div>
-      <p class="aig-status-text">${escapeHtml(message)}</p>
+      <p class="aig-status-text">${escapeHtml(PROGRESS_MESSAGES[0])}</p>
+      <div class="aig-progress">
+        <div class="aig-progress-track">
+          <div class="aig-progress-fill" style="width: 0%"></div>
+        </div>
+        <p class="aig-progress-percent">0%</p>
+      </div>
     `;
 
     this.wireOptionChips();
     this.updatePriceSummary();
+    this.startProgressAnimation();
   }
 
-  // OpenAI streams up to a few low-res previews while the edit is
-  // still refining (see editOpenAIImage's onPartialImage) — showing
-  // whichever one the last poll turned up makes the wait feel like
-  // it's actually doing something instead of a bare spinner sitting
-  // still for 10-30s. lastPartialIndex skips redundant DOM writes when
-  // a poll returns the same (already-shown) preview.
-  updatePartialPreview(url, index) {
-    if (index === this.lastPartialIndex) {
-      return;
+  // There's no real progress percentage anywhere in this pipeline —
+  // OpenAI's own streaming API only exposes a 0-2 partial-image index,
+  // not a percentage or ETA (checked directly against the API
+  // reference). This fakes one from elapsed time the same way most AI
+  // image tools do (an ease-out curve that climbs fast early and
+  // creeps as it nears 95%, never claiming 100% until the real result
+  // actually replaces this whole view), paired with rotating status
+  // text so the wait reads as active progress rather than a stalled
+  // spinner.
+  startProgressAnimation() {
+    const startedAt = Date.now();
+
+    let messageIndex = 0;
+
+    const setMessage = (index) => {
+      const text = this.querySelector(".aig-status-text");
+
+      if (text) {
+        text.textContent = PROGRESS_MESSAGES[index];
+      }
+    };
+
+    setMessage(0);
+
+    this.progressTimer = setInterval(() => {
+      const elapsedSeconds = (Date.now() - startedAt) / 1000;
+
+      const percent = Math.round(95 * (1 - Math.exp(-elapsedSeconds / 9)));
+
+      const fill = this.querySelector(".aig-progress-fill");
+      const percentText = this.querySelector(".aig-progress-percent");
+
+      if (fill) {
+        fill.style.width = `${percent}%`;
+      }
+
+      if (percentText) {
+        percentText.textContent = `${percent}%`;
+      }
+
+      const nextMessageIndex = Math.min(
+        Math.floor(elapsedSeconds / 6),
+        PROGRESS_MESSAGES.length - 1,
+      );
+
+      if (nextMessageIndex !== messageIndex) {
+        messageIndex = nextMessageIndex;
+        setMessage(messageIndex);
+      }
+    }, 300);
+  }
+
+  stopProgressAnimation() {
+    if (this.progressTimer) {
+      clearInterval(this.progressTimer);
+      this.progressTimer = null;
     }
-
-    this.lastPartialIndex = index;
-
-    const container = this.querySelector(".aig-partial-preview");
-
-    if (!container) {
-      return;
-    }
-
-    let img = container.querySelector("img");
-
-    if (!img) {
-      img = document.createElement("img");
-      img.alt = "Your artwork, in progress";
-      img.draggable = false;
-      container.appendChild(img);
-    }
-
-    img.src = url;
-    container.hidden = false;
   }
 
   pollGeneration(generationId, attempt) {
@@ -866,10 +928,6 @@ class AiArtGenerator extends HTMLElement {
           this.renderError(payload.errorMessage || "Image generation failed.");
 
           return;
-        }
-
-        if (payload.partialUrl) {
-          this.updatePartialPreview(payload.partialUrl, payload.partialIndex);
         }
 
         this.pollGeneration(generationId, attempt + 1);
@@ -1197,6 +1255,8 @@ class AiArtGenerator extends HTMLElement {
   }
 
   renderResult(resultUrl) {
+    this.stopProgressAnimation();
+
     this.innerHTML = `
       <div class="aig-result">
         ${this.renderOptionsHtml()}
