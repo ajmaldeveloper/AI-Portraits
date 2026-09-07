@@ -3,12 +3,14 @@
 // template. Runs on every page (the cart drawer is usually part of the
 // global layout, so no dedicated "cart page" navigation is needed for
 // this to catch it): (1) turns this app's own short artwork preview
-// links into a clean "Image" link, and (2) hides the two invisible
-// carrier products (see style-pricing-sync.server.ts) the Cart
-// Transform Function adds to a cart line — they exist purely to carry
-// a price surcharge and, when needed, physical shipping onto the
-// order; a customer was never meant to see their raw product titles
-// as extra line items.
+// links into a clean "Image" link, (2) swaps that same line's cart
+// thumbnail for the customer's own generated artwork instead of the
+// product's generic photo, and (3) hides the two invisible carrier
+// products (see style-pricing-sync.server.ts) the Cart Transform
+// Function adds to a cart line — they exist purely to carry a price
+// surcharge and, when needed, physical shipping onto the order; a
+// customer was never meant to see their raw product titles as extra
+// line items.
 
 (function () {
   const ARTWORK_URL_PATTERN =
@@ -142,6 +144,48 @@
     }
   }
 
+  const THUMBNAIL_SWAPPED_MARKER = "data-aig-thumbnail-swapped";
+
+  // The cart's own line item thumbnail always shows the product's
+  // generic photo (Shopify has no line-item-level image override) —
+  // this swaps it for the customer's own generated artwork instead,
+  // reusing the exact link scan() already built for this line. Climbs
+  // from the link to the nearest ancestor that contains an <img>,
+  // which in ordinary cart markup (thumbnail, then title, then
+  // properties including this link) is that line's own thumbnail —
+  // the same tightest-wrapper approach hideCarrierLines() uses, just
+  // hunting for an <img> instead of a matching text line.
+  function swapLineThumbnails(root) {
+    const links = root.querySelectorAll
+      ? root.querySelectorAll("a.aig-artwork-link")
+      : [];
+
+    for (const link of links) {
+      if (link.hasAttribute(THUMBNAIL_SWAPPED_MARKER)) {
+        continue;
+      }
+
+      link.setAttribute(THUMBNAIL_SWAPPED_MARKER, "true");
+
+      let ancestor = link.parentElement;
+      let hops = 0;
+
+      while (ancestor && hops < 8) {
+        const img = ancestor.querySelector("img");
+
+        if (img) {
+          img.src = link.href;
+          img.removeAttribute("srcset");
+          img.removeAttribute("sizes");
+          break;
+        }
+
+        ancestor = ancestor.parentElement;
+        hops += 1;
+      }
+    }
+  }
+
   // Some themes (e.g. Shopify's newer Web Component-based cart
   // drawers) render their cart contents inside an open shadow root
   // rather than plain light DOM — a TreeWalker rooted at document.body
@@ -199,6 +243,7 @@
 
   function processRoot(root) {
     scan(root);
+    swapLineThumbnails(root);
     hideCarrierLines(root);
     observeRoot(root);
     discoverShadowRoots(root);
