@@ -256,6 +256,27 @@ textarea.aig-control {
   opacity: 0.55;
 }
 
+.aig-regenerate {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px;
+  font-family: var(--aig-font);
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--aig-border);
+  border-radius: var(--aig-radius);
+  transition: background-color 140ms ease;
+}
+
+.aig-regenerate:hover {
+  background: #f6f6f7;
+}
+
 .aig-error {
   padding: 10px 14px;
   margin-bottom: 16px;
@@ -273,6 +294,41 @@ textarea.aig-control {
 .aig-result img {
   max-width: 100%;
   display: block;
+  cursor: zoom-in;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}
+
+/* A tall portrait (this app's output is always portrait, e.g. 3:5) is
+   let past viewport height on purpose — flex-centering plus
+   max-height:100% (the original approach) forces the whole image to
+   shrink until it fits, which both upscales/downscales away from its
+   real size and, at real device aspect ratios, reads as "stretched."
+   Block layout + overflow-y:auto lets it scroll vertically at its own
+   natural size instead; only max-width is capped, so the box never
+   needs to scroll horizontally. */
+.aig-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.85);
+}
+
+/* The wrapper is .aig-frame-wrap itself (reused as-is from the small
+   preview — see openLightbox), already display:inline-block, which is
+   what centers it under .aig-lightbox's text-align:center. Only the
+   inner image's own sizing/interaction needs overriding here. */
+.aig-lightbox-img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  cursor: zoom-out;
   -webkit-user-select: none;
   user-select: none;
   -webkit-user-drag: none;
@@ -286,6 +342,7 @@ textarea.aig-control {
 .aig-frame-wrap {
   display: inline-block;
   max-width: 100%;
+  margin-top: 16px;
   border-radius: var(--aig-radius) !important;
   overflow: hidden;
 }
@@ -582,6 +639,31 @@ textarea.aig-control {
   font-size: 18px;
 }
 
+.aig-partial-preview {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.aig-partial-preview img {
+  max-width: 100%;
+  display: inline-block;
+  border-radius: var(--aig-radius);
+  /* A soft pulse signals "still refining," not "final" — the same
+     reason ChatGPT's own progressive preview looks slightly hazy
+     rather than crisp until the last frame. */
+  animation: aig-partial-pulse 1600ms ease-in-out infinite;
+}
+
+@keyframes aig-partial-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .aig-spinner {
   width: 28px;
   height: 28px;
@@ -596,6 +678,54 @@ textarea.aig-control {
   margin: 0 0 24px;
   color: var(--aig-muted);
   text-align: center;
+}
+
+.aig-history {
+  margin-top: 20px;
+}
+
+.aig-history-heading {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aig-muted);
+}
+
+.aig-history-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.aig-history-thumb {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  background: #f6f6f7;
+  border: 1px solid var(--aig-border);
+  border-radius: var(--aig-radius);
+  transition: border-color 140ms ease;
+}
+
+.aig-history-thumb:hover {
+  border-color: var(--aig-focus);
+}
+
+.aig-history-thumb--active {
+  border-color: var(--aig-focus);
+  box-shadow: 0 0 0 1px var(--aig-focus);
+}
+
+.aig-history-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 @keyframes aig-spin {

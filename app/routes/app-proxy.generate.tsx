@@ -79,6 +79,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const personalization =
     typeof personalizationRaw === "string" ? personalizationRaw : "";
 
+  // Shopify appends and signs this on every app proxy request once a
+  // customer is logged in to their storefront account — reading it
+  // straight off the (already-authenticated) request URL, no separate
+  // customer auth needed. Absent for a guest.
+  const customerId = new URL(request.url).searchParams.get(
+    "logged_in_customer_id",
+  );
+
   try {
     const bytes = new Uint8Array(await photo.arrayBuffer());
 
@@ -91,6 +99,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       fieldValues,
 
       personalization,
+
+      customerId,
     });
 
     return Response.json(

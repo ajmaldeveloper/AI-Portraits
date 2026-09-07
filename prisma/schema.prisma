@@ -42,6 +42,7 @@ enum StyleAssetKind {
   PRODUCT_SELECTED
   CUSTOMER_UPLOAD
   CUSTOMER_RESULT
+  CUSTOMER_PARTIAL
   FRAME_TEXTURE
 }
 
@@ -260,6 +261,23 @@ model Generation {
   startedAt    DateTime?
   completedAt  DateTime?
 
+  // The latest low-res preview frame streamed back mid-generation (see
+  // editOpenAIImage's onPartialImage / OpenAI's images/edits
+  // "partial_images" streaming) — a CUSTOMER_PARTIAL StyleAsset,
+  // overwritten as later, more-refined previews arrive. Both are
+  // cleared back to null once the generation succeeds or fails; only
+  // meaningful while status is PROCESSING.
+  partialAssetId String?
+  partialIndex   Int?
+
+  // Shopify's own numeric customer id, from the app proxy's signed
+  // "logged_in_customer_id" request param — null for a guest
+  // (personalizing never requires an account). Lets a logged-in
+  // customer's past generations for a Style be looked up later from
+  // any device, unlike the storefront's own localStorage-based
+  // history, which only covers the current browser.
+  customerId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -268,6 +286,7 @@ model Generation {
 
   @@index([shop, createdAt])
   @@index([styleId, status])
+  @@index([styleId, customerId, status, createdAt])
 }
 
 // Per-shop bring-your-own-key AI provider configuration. The app never

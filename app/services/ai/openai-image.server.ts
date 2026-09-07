@@ -232,7 +232,129 @@ export type EditOpenAIImageInput = {
     mimeType: string;
   };
   user?: string;
+
+  // When provided, the request streams (OpenAI's images/edits endpoint
+  // supports `stream`/`partial_images`) and this is called once per
+  // low-res preview as the image is progressively refined, before the
+  // final full-quality image is returned as this function's own
+  // result. A throwing/rejecting callback is swallowed — losing a
+  // preview frame must never abort the actual generation, only the
+  // final image affects success/failure.
+  onPartialImage?: (partial: {
+    bytes: Uint8Array;
+    index: number;
+  }) => void | Promise<void>;
 };
+
+const MAX_PARTIAL_IMAGES = 3;
+
+type OpenAIImageStreamEvent = {
+  type?: string;
+  b64_json?: string;
+  revised_prompt?: string;
+  partial_image_index?: number;
+  error?: { message?: string; type?: string; code?: string | null };
+};
+
+// OpenAI's images/edits streaming response is plain Server-Sent
+// Events over the same fetch body — no SDK needed, just line-based
+// parsing of "data: {...}" frames separated by a blank line.
+async function consumeEditImageStream(
+  response: Response,
+  onPartialImage: EditOpenAIImageInput["onPartialImage"],
+): Promise<OpenAIImageStreamEvent> {
+  const requestId = response.headers.get("x-request-id");
+
+  if (!response.body) {
+    throw new OpenAIImageError("OpenAI returned no response body to stream.", {
+      code: "empty_stream",
+      requestId,
+    });
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  let buffer = "";
+  let completed: OpenAIImageStreamEvent | null = null;
+  let streamError: OpenAIImageStreamEvent["error"] | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary = buffer.indexOf("\n\n");
+
+    while (boundary !== -1) {
+      const rawEvent = buffer.slice(0, boundary);
+
+      buffer = buffer.slice(boundary + 2);
+
+      const dataText = rawEvent
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim())
+        .join("\n");
+
+      if (dataText && dataText !== "[DONE]") {
+        try {
+          const event = JSON.parse(dataText) as OpenAIImageStreamEvent;
+
+          if (event.type === "image_edit.partial_image" && event.b64_json) {
+            try {
+              await onPartialImage?.({
+                bytes: decodeBase64Image(event.b64_json),
+                index: event.partial_image_index ?? 0,
+              });
+            } catch (callbackError) {
+              console.error(
+                "Could not record a partial image preview",
+                callbackError,
+              );
+            }
+          } else if (event.type === "image_edit.completed") {
+            completed = event;
+          } else if (event.error) {
+            streamError = event.error;
+          }
+        } catch {
+          // A malformed frame is skipped rather than aborting the whole
+          // stream — the final image_edit.completed event is what
+          // actually determines success.
+        }
+      }
+
+      boundary = buffer.indexOf("\n\n");
+    }
+  }
+
+  if (streamError) {
+    throw new OpenAIImageError(
+      streamError.message || "OpenAI image editing failed.",
+      {
+        code: streamError.code || streamError.type || "stream_error",
+        requestId,
+      },
+    );
+  }
+
+  if (!completed?.b64_json) {
+    throw new OpenAIImageError(
+      "OpenAI completed the request but returned no image.",
+      {
+        code: "no_images_returned",
+        requestId,
+      },
+    );
+  }
+
+  return completed;
+}
 
 export type EditOpenAIImageResult = {
   image: OpenAIGeneratedImage;
@@ -313,6 +435,14 @@ export async function editOpenAIImage(
     form.set("user", input.user);
   }
 
+  // Streaming is only worth turning on when there's actually a
+  // callback to hand previews to — every other caller gets the exact
+  // same plain request/response shape as before.
+  if (input.onPartialImage) {
+    form.set("stream", "true");
+    form.set("partial_images", String(MAX_PARTIAL_IMAGES));
+  }
+
   const response = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST",
 
@@ -327,6 +457,55 @@ export async function editOpenAIImage(
 
   const requestId = response.headers.get("x-request-id");
 
+  // An error status is always a plain JSON body, streaming request or
+  // not — OpenAI never starts the SSE stream unless the request first
+  // validates.
+  if (!response.ok) {
+    let errorPayload: OpenAIImagesResponse = {};
+
+    try {
+      errorPayload = (await response.json()) as OpenAIImagesResponse;
+    } catch {
+      throw new OpenAIImageError(
+        `OpenAI returned an unreadable response (${response.status}).`,
+        {
+          code: `http_${response.status}`,
+          requestId,
+        },
+      );
+    }
+
+    throw new OpenAIImageError(
+      errorPayload.error?.message ||
+        `OpenAI image editing failed with status ${response.status}.`,
+      {
+        code:
+          errorPayload.error?.code ||
+          errorPayload.error?.type ||
+          `http_${response.status}`,
+
+        requestId,
+      },
+    );
+  }
+
+  if (input.onPartialImage) {
+    const completed = await consumeEditImageStream(
+      response,
+      input.onPartialImage,
+    );
+
+    return {
+      image: {
+        bytes: decodeBase64Image(completed.b64_json as string),
+        revisedPrompt: completed.revised_prompt ?? null,
+      },
+
+      model,
+      requestId,
+    };
+  }
+
   let payload: OpenAIImagesResponse;
 
   try {
@@ -336,21 +515,6 @@ export async function editOpenAIImage(
       `OpenAI returned an unreadable response (${response.status}).`,
       {
         code: `http_${response.status}`,
-        requestId,
-      },
-    );
-  }
-
-  if (!response.ok) {
-    throw new OpenAIImageError(
-      payload.error?.message ||
-        `OpenAI image editing failed with status ${response.status}.`,
-      {
-        code:
-          payload.error?.code ||
-          payload.error?.type ||
-          `http_${response.status}`,
-
         requestId,
       },
     );

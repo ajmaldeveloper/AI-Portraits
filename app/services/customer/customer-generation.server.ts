@@ -20,6 +20,7 @@ import {
 import {
   createGenerationLedgerEntry,
   markGenerationFailed,
+  markGenerationPartial,
   markGenerationProcessing,
   markGenerationSucceeded,
 } from "../generations/generation.server";
@@ -88,6 +89,13 @@ export type StartCustomerGenerationInput = {
   // next to the photo upload (e.g. "add a crown") — distinct from the
   // merchant-defined fields above, and not tied to any Style config.
   personalization?: string;
+
+  // Shopify's own numeric customer id, from the storefront app proxy
+  // request's "logged_in_customer_id" param — null for a guest.
+  // Recorded purely so a logged-in customer's past generations for
+  // this Style can be looked up later from any device; personalizing
+  // itself never requires being logged in.
+  customerId?: string | null;
 };
 
 export async function startCustomerGeneration(
@@ -172,6 +180,7 @@ export async function startCustomerGeneration(
     provider: credentials.provider,
     model: credentials.model,
     prompt,
+    customerId: input.customerId,
     inputPayload: {
       fieldValues: input.fieldValues,
       personalization: input.personalization?.trim() || null,
@@ -232,6 +241,31 @@ async function runCustomerGeneration(input: {
       size: outputSize(input.aspectRatio),
       quality: outputQuality(input.quality),
       image: input.photo,
+
+      // Lets the customer watch the artwork sharpen in stages instead
+      // of staring at a bare spinner for the full ~10-30s edit — see
+      // getCustomerGenerationStatus/the app-proxy generations route,
+      // which surface partialAssetId/partialIndex to the storefront's
+      // poll loop. Best-effort: a failure recording one preview frame
+      // (caught inside editOpenAIImage itself) never affects the
+      // actual generation.
+      onPartialImage: async (partial) => {
+        const asset = await prisma.styleAsset.create({
+          data: {
+            styleId: input.styleId,
+            generationId: input.generationId,
+            kind: StyleAssetKind.CUSTOMER_PARTIAL,
+            mimeType: "image/png",
+            altText: `In-progress preview for ${input.styleName}`,
+            binaryData: toDatabaseBytes(partial.bytes),
+          },
+        });
+
+        await markGenerationPartial(input.shop, input.generationId, {
+          partialAssetId: asset.id,
+          partialIndex: partial.index,
+        });
+      },
     });
 
     const dimensions = pngDimensions(result.image.bytes);
@@ -286,6 +320,8 @@ export type CustomerGenerationStatus = {
   status: GenerationStatus;
   errorMessage: string | null;
   resultAssetId: string | null;
+  partialAssetId: string | null;
+  partialIndex: number | null;
   styleId: string;
 };
 
@@ -304,6 +340,8 @@ export async function getCustomerGenerationStatus(
       status: true,
       errorMessage: true,
       styleId: true,
+      partialAssetId: true,
+      partialIndex: true,
 
       assets: {
         where: {
@@ -327,6 +365,41 @@ export async function getCustomerGenerationStatus(
     status: generation.status,
     errorMessage: generation.errorMessage,
     resultAssetId: generation.assets[0]?.id ?? null,
+    partialAssetId: generation.partialAssetId,
+    partialIndex: generation.partialIndex,
     styleId: generation.styleId,
   };
+}
+
+const CUSTOMER_HISTORY_LIMIT = 12;
+
+// Only ever returns something for a logged-in customer (the storefront
+// only has a customerId to pass once one is) — a guest's generations
+// are still recorded (customerId stays null) but have no durable way
+// to be looked back up, since there's no account to tie them to. The
+// storefront's own localStorage-based history is what covers guests,
+// and still applies on top of this for a logged-in customer too (e.g.
+// something generated in a previous, now-logged-out visit).
+export async function listCustomerGenerations(
+  shop: string,
+  styleId: string,
+  customerId: string,
+): Promise<Array<{ id: string; createdAt: Date }>> {
+  return prisma.generation.findMany({
+    where: {
+      shop,
+      styleId,
+      customerId,
+      purpose: GenerationPurpose.CUSTOMER_FINAL,
+      status: GenerationStatus.SUCCEEDED,
+    },
+
+    orderBy: { createdAt: "desc" },
+    take: CUSTOMER_HISTORY_LIMIT,
+
+    select: {
+      id: true,
+      createdAt: true,
+    },
+  });
 }

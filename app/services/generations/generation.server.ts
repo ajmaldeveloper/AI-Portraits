@@ -11,6 +11,7 @@ export type CreateGenerationInput = {
   model?: string | null;
   prompt: string;
   inputPayload?: Prisma.InputJsonValue;
+  customerId?: string | null;
 };
 
 async function requireGenerationForShop(shop: string, generationId: string) {
@@ -56,6 +57,7 @@ export async function createGenerationLedgerEntry(
       provider,
       model: input.model?.trim() || null,
       prompt: input.prompt,
+      customerId: input.customerId || null,
       ...(input.inputPayload === undefined
         ? {}
         : { inputPayload: input.inputPayload }),
@@ -104,6 +106,8 @@ export async function markGenerationSucceeded(
       completedAt: new Date(),
       errorCode: null,
       errorMessage: null,
+      partialAssetId: null,
+      partialIndex: null,
       ...(input.outputPayload === undefined
         ? {}
         : { outputPayload: input.outputPayload }),
@@ -111,6 +115,29 @@ export async function markGenerationSucceeded(
       ...(input.costMicros === undefined
         ? {}
         : { costMicros: input.costMicros }),
+    },
+  });
+}
+
+// Called once per streamed preview frame (see editOpenAIImage's
+// onPartialImage) — overwrites the previous one, since only the
+// latest preview is ever shown. Cleared back to null by
+// markGenerationSucceeded/markGenerationFailed once there's a real
+// result (or none coming).
+export async function markGenerationPartial(
+  shop: string,
+  generationId: string,
+  input: { partialAssetId: string; partialIndex: number },
+) {
+  const generation = await requireGenerationForShop(shop, generationId);
+
+  return prisma.generation.update({
+    where: {
+      id: generation.id,
+    },
+    data: {
+      partialAssetId: input.partialAssetId,
+      partialIndex: input.partialIndex,
     },
   });
 }
@@ -136,6 +163,8 @@ export async function markGenerationFailed(
       completedAt: new Date(),
       errorCode: input.errorCode?.trim() || null,
       errorMessage: input.errorMessage,
+      partialAssetId: null,
+      partialIndex: null,
       ...(input.usage === undefined ? {} : { usage: input.usage }),
       ...(input.costMicros === undefined
         ? {}

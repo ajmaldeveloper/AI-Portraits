@@ -92,6 +92,15 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         );
   }
 
+  // A low-res in-progress preview (see editOpenAIImage's onPartialImage
+  // / markGenerationPartial) — only ever set while status is
+  // PROCESSING, so the storefront's poll loop can show it sharpening
+  // instead of a bare spinner. No per-size scaling needed here, unlike
+  // resultUrls — it's a rough preview, not something ordered.
+  const partialUrl = status.partialAssetId
+    ? createSignedStyleAssetUrl(request.url, status.partialAssetId, session.shop)
+    : null;
+
   return Response.json(
     {
       ok: true,
@@ -99,6 +108,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       errorMessage: status.errorMessage,
       resultUrl,
       resultUrls,
+      partialUrl,
+      partialIndex: status.partialIndex,
     },
     {
       headers: {

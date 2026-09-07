@@ -16,6 +16,117 @@
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLL_ATTEMPTS = 90; // ~3 minutes
 
+// A guest's history is scoped to this browser only (localStorage), per
+// Style so different products never mix; a logged-in customer's is
+// additionally fetched from the server (see fetchServerHistory) and
+// merged with this, so it follows them across devices too. Each
+// entry's own resultUrl is cached alongside it once resolved — it's a
+// signed link good for a few hours (see media-signing.server.ts),
+// tracked via resultUrlExpiresAt, so a thumbnail already looked at
+// once (or the one just generated) never needs re-fetching from
+// /generations/:id just to redraw or reselect it.
+const HISTORY_MAX_ENTRIES = 6;
+
+function historyStorageKey(styleId) {
+  return `aig-history-${styleId}`;
+}
+
+function loadHistory(styleId) {
+  try {
+    const raw = localStorage.getItem(historyStorageKey(styleId));
+    const parsed = raw ? JSON.parse(raw) : [];
+
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(styleId, entries) {
+  try {
+    localStorage.setItem(historyStorageKey(styleId), JSON.stringify(entries));
+  } catch {
+    // Storage can be unavailable (private browsing, a full quota) —
+    // history is a convenience on top of generating/ordering, never a
+    // requirement for either, so failures here are silently ignored.
+  }
+}
+
+// The "expires" search param is a Unix timestamp in seconds (see
+// createSignedStyleAssetUrl) — a minute of slack avoids using a URL
+// that's technically still valid when the fetch starts but expires by
+// the time the browser actually requests the image.
+function signedUrlExpiresAt(url) {
+  try {
+    const expires = Number(new URL(url).searchParams.get("expires"));
+
+    return Number.isFinite(expires) ? expires * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+function isResultUrlFresh(entry) {
+  return Boolean(
+    entry.resultUrl &&
+      entry.resultUrlExpiresAt &&
+      Date.now() < entry.resultUrlExpiresAt - 60_000,
+  );
+}
+
+// A returning visit's style/options/pricing rarely changes between one
+// page load and the next, but re-fetching it from scratch every time
+// (through a serverless DB that can be slow to wake up) makes the
+// widget feel like it's stalling before it's shown anything at all.
+// Serving the previous response immediately, then quietly refreshing
+// the cache in the background for next time, makes every repeat visit
+// within STYLE_CACHE_MAX_AGE_MS feel instant without ever showing
+// stale pricing for more than a day.
+const STYLE_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function styleCacheKey(styleId) {
+  return `aig-style-cache-${styleId}`;
+}
+
+function loadCachedStyle(styleId) {
+  try {
+    const raw = localStorage.getItem(styleCacheKey(styleId));
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !parsed.payload ||
+      typeof parsed.cachedAt !== "number" ||
+      Date.now() - parsed.cachedAt > STYLE_CACHE_MAX_AGE_MS
+    ) {
+      return null;
+    }
+
+    return parsed.payload;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedStyle(styleId, payload) {
+  try {
+    localStorage.setItem(
+      styleCacheKey(styleId),
+      JSON.stringify({ cachedAt: Date.now(), payload }),
+    );
+  } catch {
+    // Best-effort — a full quota or disabled storage just means every
+    // load takes the normal network path, same as before this cache
+    // existed.
+  }
+}
+
 class AiArtGenerator extends HTMLElement {
   constructor() {
     super();
@@ -66,6 +177,14 @@ class AiArtGenerator extends HTMLElement {
     this.submittedPersonalization = "";
     this.generationId = null;
     this.generationResultUrl = null;
+
+    // A logged-in customer's own past generations for this Style, from
+    // the server (see fetchServerHistory) — empty for a guest, or
+    // until that fetch resolves. Merged with the always-available
+    // localStorage-based history (loadHistory) in getHistoryEntries()
+    // rather than replacing it, so nothing generated while logged out
+    // ever disappears once the customer logs in.
+    this.serverHistory = [];
   }
 
   connectedCallback() {
@@ -75,6 +194,7 @@ class AiArtGenerator extends HTMLElement {
 
     this.loadStyle();
     this.wireCartGate();
+    this.fetchServerHistory();
   }
 
   disconnectedCallback() {
@@ -255,8 +375,43 @@ class AiArtGenerator extends HTMLElement {
     this.renderError(message);
   }
 
+  applyStylePayload(payload) {
+    this.fields = payload.fields || [];
+    this.basePrice = payload.basePrice || "0";
+    this.swatchWidthPx = payload.swatchWidthPx ?? null;
+    this.swatchHeightPx = payload.swatchHeightPx ?? null;
+    this.swatchFontSizePx = payload.swatchFontSizePx ?? null;
+    this.swatchWidthMobilePx = payload.swatchWidthMobilePx ?? null;
+    this.swatchHeightMobilePx = payload.swatchHeightMobilePx ?? null;
+    this.swatchFontSizeMobilePx = payload.swatchFontSizeMobilePx ?? null;
+    this.swatchGapPx = payload.swatchGapPx ?? null;
+    this.swatchBorderColor = payload.swatchBorderColor ?? null;
+    this.swatchActiveBorderColor = payload.swatchActiveBorderColor ?? null;
+    this.swatchRadiusPx = payload.swatchRadiusPx ?? null;
+    this.swatchBackgroundColor = payload.swatchBackgroundColor ?? null;
+    this.swatchActiveBackgroundColor = payload.swatchActiveBackgroundColor ?? null;
+    this.swatchFullBleed = Boolean(payload.swatchFullBleed);
+    this.options = payload.options || [];
+    this.selectedChoices = this.defaultSelections();
+  }
+
+  // A cache hit renders the form immediately from yesterday's data (or
+  // today's — see STYLE_CACHE_MAX_AGE_MS) and only refreshes the cache
+  // in the background, without forcing a live re-render — the
+  // customer could already be mid-upload by the time that fetch
+  // resolves, and swapping the form out from under them would be worse
+  // than the pricing being a few hours stale. A cache miss (first-ever
+  // visit from this browser) falls back to the original
+  // spinner-then-render behavior, since there's nothing to show yet.
   async loadStyle() {
-    this.renderLoading();
+    const cached = loadCachedStyle(this.styleId);
+
+    if (cached) {
+      this.applyStylePayload(cached);
+      this.renderForm();
+    } else {
+      this.renderLoading();
+    }
 
     try {
       const response = await fetch(
@@ -266,34 +421,25 @@ class AiArtGenerator extends HTMLElement {
       const payload = await response.json();
 
       if (!response.ok || !payload.ok) {
-        this.renderError(
-          payload.error || "This product isn't available right now.",
-        );
+        if (!cached) {
+          this.renderError(
+            payload.error || "This product isn't available right now.",
+          );
+        }
 
         return;
       }
 
-      this.fields = payload.fields || [];
-      this.basePrice = payload.basePrice || "0";
-      this.swatchWidthPx = payload.swatchWidthPx ?? null;
-      this.swatchHeightPx = payload.swatchHeightPx ?? null;
-      this.swatchFontSizePx = payload.swatchFontSizePx ?? null;
-      this.swatchWidthMobilePx = payload.swatchWidthMobilePx ?? null;
-      this.swatchHeightMobilePx = payload.swatchHeightMobilePx ?? null;
-      this.swatchFontSizeMobilePx = payload.swatchFontSizeMobilePx ?? null;
-      this.swatchGapPx = payload.swatchGapPx ?? null;
-      this.swatchBorderColor = payload.swatchBorderColor ?? null;
-      this.swatchActiveBorderColor = payload.swatchActiveBorderColor ?? null;
-      this.swatchRadiusPx = payload.swatchRadiusPx ?? null;
-      this.swatchBackgroundColor = payload.swatchBackgroundColor ?? null;
-      this.swatchActiveBackgroundColor = payload.swatchActiveBackgroundColor ?? null;
-      this.swatchFullBleed = Boolean(payload.swatchFullBleed);
-      this.options = payload.options || [];
-      this.selectedChoices = this.defaultSelections();
+      saveCachedStyle(this.styleId, payload);
 
-      this.renderForm();
+      if (!cached) {
+        this.applyStylePayload(payload);
+        this.renderForm();
+      }
     } catch {
-      this.renderError("Could not load the personalization form.");
+      if (!cached) {
+        this.renderError("Could not load the personalization form.");
+      }
     }
   }
 
@@ -427,6 +573,7 @@ class AiArtGenerator extends HTMLElement {
         ${fieldsHtml}
         <button type="submit" class="aig-submit">${escapeHtml(this.buttonLabel)}</button>
       </form>
+      ${this.renderHistoryHtml()}
     `;
 
     const form = this.querySelector(".aig-form");
@@ -443,6 +590,7 @@ class AiArtGenerator extends HTMLElement {
 
     this.wireOptionChips();
     this.updatePriceSummary();
+    this.wireHistory();
   }
 
   wireDropzone(fieldId) {
@@ -633,23 +781,52 @@ class AiArtGenerator extends HTMLElement {
   // Keeps the options/price panel visible through generation too, not
   // just before and after — the customer can keep changing Size/
   // Framing/Mat color while the artwork is being generated, and the
-  // price stays accurate the whole time.
-  // Spinner/status first, options below — unlike the form and result
-  // views (where options are the main thing to interact with, so they
-  // lead), the options panel here can be tall enough on its own to
-  // push the "Generating…" feedback below the fold, making it look
-  // like nothing is happening. There's no photo to review yet at this
-  // point, so the spinner is the one thing that actually needs to be
-  // immediately visible without scrolling.
+  // price stays accurate the whole time. Options lead, spinner/status
+  // below, matching renderForm()/renderResult()'s own ordering.
   renderStatus(message) {
+    this.lastPartialIndex = null;
+
     this.innerHTML = `
+      ${this.renderOptionsHtml()}
+      <div class="aig-partial-preview" hidden></div>
       <div class="aig-spinner" role="status"></div>
       <p class="aig-status-text">${escapeHtml(message)}</p>
-      ${this.renderOptionsHtml()}
     `;
 
     this.wireOptionChips();
     this.updatePriceSummary();
+  }
+
+  // OpenAI streams up to a few low-res previews while the edit is
+  // still refining (see editOpenAIImage's onPartialImage) — showing
+  // whichever one the last poll turned up makes the wait feel like
+  // it's actually doing something instead of a bare spinner sitting
+  // still for 10-30s. lastPartialIndex skips redundant DOM writes when
+  // a poll returns the same (already-shown) preview.
+  updatePartialPreview(url, index) {
+    if (index === this.lastPartialIndex) {
+      return;
+    }
+
+    this.lastPartialIndex = index;
+
+    const container = this.querySelector(".aig-partial-preview");
+
+    if (!container) {
+      return;
+    }
+
+    let img = container.querySelector("img");
+
+    if (!img) {
+      img = document.createElement("img");
+      img.alt = "Your artwork, in progress";
+      img.draggable = false;
+      container.appendChild(img);
+    }
+
+    img.src = url;
+    container.hidden = false;
   }
 
   pollGeneration(generationId, attempt) {
@@ -679,6 +856,7 @@ class AiArtGenerator extends HTMLElement {
           this.generationId = generationId;
           this.generationResultUrl = payload.resultUrl;
 
+          this.recordHistoryEntry(generationId, payload.resultUrl);
           this.renderResult(payload.resultUrl);
 
           return;
@@ -690,11 +868,332 @@ class AiArtGenerator extends HTMLElement {
           return;
         }
 
+        if (payload.partialUrl) {
+          this.updatePartialPreview(payload.partialUrl, payload.partialIndex);
+        }
+
         this.pollGeneration(generationId, attempt + 1);
       } catch {
         this.pollGeneration(generationId, attempt + 1);
       }
     }, POLL_INTERVAL_MS);
+  }
+
+  // Upserts by id (a fresh generation gets a new entry; revisiting an
+  // existing one just refreshes its cached URL/expiry) and, when a
+  // resultUrl is supplied, caches it right away so this entry never
+  // needs a round trip to /generations/:id just to draw its own
+  // thumbnail or be reselected — see isResultUrlFresh/signedUrlExpiresAt.
+  recordHistoryEntry(generationId, resultUrl) {
+    const entries = loadHistory(this.styleId).filter(
+      (entry) => entry.generationId !== generationId,
+    );
+
+    entries.unshift({
+      generationId,
+      createdAt: Date.now(),
+      resultUrl: resultUrl ?? null,
+      resultUrlExpiresAt: resultUrl ? signedUrlExpiresAt(resultUrl) : null,
+    });
+
+    saveHistory(this.styleId, entries.slice(0, HISTORY_MAX_ENTRIES));
+  }
+
+  pruneHistoryEntry(generationId) {
+    saveHistory(
+      this.styleId,
+      loadHistory(this.styleId).filter(
+        (entry) => entry.generationId !== generationId,
+      ),
+    );
+  }
+
+  // Patches in a resolved URL without disturbing the entry's position
+  // or createdAt (unlike recordHistoryEntry, which is for a genuinely
+  // new/regenerated entry and deliberately bumps it to the front) —
+  // this is purely "now that we know this id's URL, remember it so the
+  // next look at the same thumbnail is instant." Also patches
+  // this.serverHistory in place so a second click within the same page
+  // view is instant even for an id that only exists on the server so
+  // far (localStorage will pick it up too, for next time).
+  cacheHistoryResultUrl(generationId, resultUrl) {
+    const resultUrlExpiresAt = signedUrlExpiresAt(resultUrl);
+
+    const serverEntry = this.serverHistory.find(
+      (entry) => entry.id === generationId,
+    );
+
+    if (serverEntry) {
+      serverEntry.resultUrl = resultUrl;
+      serverEntry.resultUrlExpiresAt = resultUrlExpiresAt;
+    }
+
+    const entries = loadHistory(this.styleId);
+    const existing = entries.find((entry) => entry.generationId === generationId);
+
+    if (existing) {
+      existing.resultUrl = resultUrl;
+      existing.resultUrlExpiresAt = resultUrlExpiresAt;
+    } else {
+      entries.push({
+        generationId,
+        createdAt: Date.now(),
+        resultUrl,
+        resultUrlExpiresAt,
+      });
+    }
+
+    saveHistory(this.styleId, entries.slice(0, HISTORY_MAX_ENTRIES));
+  }
+
+  // A logged-in customer's history (from the server, durable across
+  // devices) merged with this browser's own (from localStorage,
+  // available even to a guest) — deduped by id, most recent first.
+  // Neither source ever overwrites or drops entries the other one
+  // has; something generated as a guest still shows up after logging
+  // in, and vice versa. Local entries are spread in *after* server
+  // ones so a locally-cached resultUrl always wins the merge for an id
+  // both sides know about, rather than the server's bare id-only entry
+  // shadowing it.
+  getHistoryEntries() {
+    const local = loadHistory(this.styleId);
+
+    const server = this.serverHistory.map((entry) => ({
+      generationId: entry.id,
+      createdAt: new Date(entry.createdAt).getTime(),
+      ...(entry.resultUrl
+        ? {
+            resultUrl: entry.resultUrl,
+            resultUrlExpiresAt: entry.resultUrlExpiresAt,
+          }
+        : {}),
+    }));
+
+    const merged = new Map();
+
+    for (const entry of [...server, ...local]) {
+      merged.set(entry.generationId, { ...merged.get(entry.generationId), ...entry });
+    }
+
+    return Array.from(merged.values())
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, HISTORY_MAX_ENTRIES);
+  }
+
+  async fetchServerHistory() {
+    try {
+      const response = await fetch(
+        `${this.proxyRoot}/styles/${encodeURIComponent(this.styleId)}/generations`,
+      );
+
+      const payload = await response.json();
+
+      if (response.ok && payload.ok && Array.isArray(payload.generations)) {
+        this.serverHistory = payload.generations;
+        this.refreshHistorySection();
+      }
+    } catch {
+      // The long-term, cross-device history is on top of the always-
+      // available localStorage one — a failed fetch here just means
+      // this render only shows what this browser already knows about.
+    }
+  }
+
+  // Patches the history strip in place with whatever's already on
+  // screen (the form or the result view) rather than re-rendering
+  // either wholesale — fetchServerHistory() resolves well after the
+  // initial render, and a full re-render at that point could yank away
+  // an upload already in progress.
+  refreshHistorySection() {
+    const existing = this.querySelector(".aig-history");
+    const html = this.renderHistoryHtml();
+
+    if (!html) {
+      existing?.remove();
+
+      return;
+    }
+
+    if (!existing) {
+      return;
+    }
+
+    existing.outerHTML = html;
+
+    this.wireHistory();
+  }
+
+  // Rendered wherever a customer might want to jump back to an
+  // earlier result — the form (before/after uploading again) and the
+  // result view alike. Each thumbnail starts blank (there's no stored
+  // image to show yet, only an id) and fills in once wireHistory()
+  // resolves it against the server; a generation that's gone missing
+  // (expired, deleted) just quietly drops its thumbnail rather than
+  // showing a broken image.
+  renderHistoryHtml() {
+    const entries = this.getHistoryEntries();
+
+    if (entries.length === 0) {
+      return "";
+    }
+
+    const thumbsHtml = entries
+      .map((entry) => {
+        const isActive = entry.generationId === this.generationId;
+
+        return `
+          <button
+            type="button"
+            class="aig-history-thumb${isActive ? " aig-history-thumb--active" : ""}"
+            data-aig-history-id="${escapeHtml(entry.generationId)}"
+            aria-pressed="${isActive ? "true" : "false"}"
+            aria-label="View a previous generation"
+          ></button>
+        `;
+      })
+      .join("");
+
+    return `
+      <div class="aig-history">
+        <p class="aig-history-heading">Previous generations (${entries.length})</p>
+        <div class="aig-history-strip">${thumbsHtml}</div>
+      </div>
+    `;
+  }
+
+  wireHistory() {
+    this.querySelectorAll(".aig-history-thumb").forEach((button) => {
+      const generationId = button.dataset.aigHistoryId;
+
+      this.loadHistoryThumbnail(button, generationId);
+
+      button.addEventListener("click", () =>
+        this.selectHistoryEntry(generationId),
+      );
+    });
+  }
+
+  async fetchGenerationResultUrl(generationId) {
+    const response = await fetch(
+      `${this.proxyRoot}/generations/${encodeURIComponent(generationId)}`,
+    );
+
+    const payload = await response.json();
+
+    if (!response.ok || !payload.ok || payload.status !== "SUCCEEDED" || !payload.resultUrl) {
+      return null;
+    }
+
+    return payload.resultUrl;
+  }
+
+  // A cached, still-valid URL (the just-generated one, or one already
+  // resolved earlier this visit or a previous one) skips the network
+  // entirely — this is what actually makes an already-seen thumbnail
+  // draw instantly instead of waiting on /generations/:id again.
+  cachedHistoryResultUrl(generationId) {
+    const entry = this.getHistoryEntries().find(
+      (candidate) => candidate.generationId === generationId,
+    );
+
+    return entry && isResultUrlFresh(entry) ? entry.resultUrl : null;
+  }
+
+  async loadHistoryThumbnail(button, generationId, attempt = 0) {
+    const cachedUrl = this.cachedHistoryResultUrl(generationId);
+
+    if (cachedUrl) {
+      button.innerHTML = `<img src="${cachedUrl}" alt="Previous generation" draggable="false" />`;
+
+      return;
+    }
+
+    let resultUrl = null;
+    let networkError = false;
+
+    try {
+      resultUrl = await this.fetchGenerationResultUrl(generationId);
+    } catch {
+      networkError = true;
+    }
+
+    // A regenerate/refresh can swap this whole section out (a new
+    // .aig-history-thumb replaces this one) before a slow fetch
+    // resolves — writing into a detached button at that point would
+    // silently do nothing useful anyway, but skipping it also avoids
+    // wrongly pruning a perfectly good history entry just because
+    // this particular button is no longer the one on screen.
+    if (!button.isConnected) {
+      return;
+    }
+
+    if (resultUrl) {
+      this.cacheHistoryResultUrl(generationId, resultUrl);
+      button.innerHTML = `<img src="${resultUrl}" alt="Previous generation" draggable="false" />`;
+
+      return;
+    }
+
+    // A thrown error (network hiccup, dev tunnel blip) is not the same
+    // as the server confirming this generation is gone/unsuccessful —
+    // only the latter should ever prune real history. One retry after
+    // a short delay is enough to ride out most transient failures
+    // without leaving the thumbnail permanently blank.
+    if (networkError && attempt < 2) {
+      setTimeout(
+        () => this.loadHistoryThumbnail(button, generationId, attempt + 1),
+        800,
+      );
+
+      return;
+    }
+
+    if (networkError) {
+      // Still couldn't load it after retrying, but the server never
+      // actually said this generation is gone — leave the entry in
+      // history for a future page load to try again, just drop this
+      // one unusable thumbnail from view.
+      button.remove();
+
+      return;
+    }
+
+    this.pruneHistoryEntry(generationId);
+    button.remove();
+  }
+
+  async selectHistoryEntry(generationId) {
+    const cachedUrl = this.cachedHistoryResultUrl(generationId);
+
+    if (cachedUrl) {
+      this.generationId = generationId;
+      this.generationResultUrl = cachedUrl;
+
+      this.renderResult(cachedUrl);
+
+      return;
+    }
+
+    let resultUrl = null;
+
+    try {
+      resultUrl = await this.fetchGenerationResultUrl(generationId);
+    } catch {
+      resultUrl = null;
+    }
+
+    if (!resultUrl) {
+      this.pruneHistoryEntry(generationId);
+
+      return;
+    }
+
+    this.cacheHistoryResultUrl(generationId, resultUrl);
+
+    this.generationId = generationId;
+    this.generationResultUrl = resultUrl;
+
+    this.renderResult(resultUrl);
   }
 
   renderResult(resultUrl) {
@@ -704,6 +1203,8 @@ class AiArtGenerator extends HTMLElement {
         <div class="aig-frame-wrap">
           <img src="${resultUrl}" alt="Your personalized artwork" draggable="false" />
         </div>
+        ${this.renderHistoryHtml()}
+        <button type="button" class="aig-regenerate">Generate a new image</button>
       </div>
     `;
 
@@ -711,7 +1212,7 @@ class AiArtGenerator extends HTMLElement {
     // or by inspecting network requests), just raises the bar against
     // a casual right-click/drag save before the customer has actually
     // paid for it.
-    const resultImage = this.querySelector(".aig-result img");
+    const resultImage = this.querySelector(".aig-frame-wrap img");
 
     resultImage?.addEventListener("contextmenu", (event) =>
       event.preventDefault(),
@@ -721,9 +1222,77 @@ class AiArtGenerator extends HTMLElement {
       event.preventDefault(),
     );
 
+    resultImage?.addEventListener("click", () => this.openLightbox(resultUrl));
+
+    // Nothing else resets renderForm()'s only calls otherwise happen
+    // once, on first load — without this, the only way back to the
+    // upload step is reloading the whole page. selectedChoices (Size/
+    // Framing/Mat color) carries over untouched since renderForm()
+    // only clears photoFile; the previous result stays usable for
+    // Add to cart (see the cartForm "formdata" listener) until a new
+    // generation actually succeeds and overwrites it.
+    this.querySelector(".aig-regenerate")?.addEventListener("click", () => {
+      this.renderForm();
+    });
+
     this.wireOptionChips();
     this.updateFramePreview();
     this.updatePriceSummary();
+    this.wireHistory();
+  }
+
+  // Reuses the exact same .aig-frame-wrap the small preview uses (see
+  // computeFrameStyle/applyFrameStyle) so the full-size view — like
+  // the small one — shows the frame/mat, not just the bare photo.
+  // Appended to document.body rather than inside this custom element
+  // so it always covers the whole viewport regardless of where this
+  // widget sits in the page's own layout/stacking context.
+  openLightbox(url) {
+    const backdrop = document.createElement("div");
+
+    backdrop.className = "aig-lightbox";
+    backdrop.setAttribute("role", "dialog");
+    backdrop.setAttribute("aria-modal", "true");
+    backdrop.setAttribute("aria-label", "Full size artwork preview");
+
+    backdrop.innerHTML = `
+      <div class="aig-frame-wrap">
+        <img class="aig-lightbox-img" src="${url}" alt="Your personalized artwork, full size" draggable="false" />
+      </div>
+    `;
+
+    this.applyFrameStyle(backdrop.querySelector(".aig-frame-wrap"));
+
+    const image = backdrop.querySelector("img");
+
+    image.addEventListener("contextmenu", (event) => event.preventDefault());
+    image.addEventListener("dragstart", (event) => event.preventDefault());
+
+    const close = () => {
+      backdrop.remove();
+      document.removeEventListener("keydown", onKeydown);
+    };
+
+    const onKeydown = (event) => {
+      if (event.key === "Escape") {
+        close();
+      }
+    };
+
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        close();
+      }
+    });
+
+    // No close button — clicking the image (cursor: zoom-out signals
+    // this) or anywhere on the backdrop, or pressing Escape, are the
+    // only ways out.
+    image.addEventListener("click", close);
+
+    document.addEventListener("keydown", onKeydown);
+
+    document.body.appendChild(backdrop);
   }
 
   // Rendered below the result image — one group per Product option
@@ -860,72 +1429,53 @@ class AiArtGenerator extends HTMLElement {
     }
   }
 
-  // Resolves the currently-selected Framing choice and draws (or
-  // clears) the CSS border + mat ring around the result image
-  // accordingly — a Framing choice only carries a hexColor/imageUrl
-  // when it's an actual physical frame (e.g. not a "No
-  // Frame" row), so this naturally shows the frame/mat only when a
-  // real framed choice is selected. Safe to call any time — a no-op
-  // before a result exists.
-  updateFramePreview() {
-    const wrap = this.querySelector(".aig-frame-wrap");
-
-    if (!wrap) {
-      return;
-    }
-
+  // Resolves the currently-selected Framing/Mat choices into plain
+  // data (CSS classes + custom-property values) describing how
+  // .aig-frame-wrap should render — shared by the small live preview
+  // (updateFramePreview) and the full-size lightbox (openLightbox), so
+  // both always show the exact same frame/mat rather than the lightbox
+  // showing a bare, unframed photo. A Framing choice only carries a
+  // hexColor/imageUrl when it's an actual physical frame (not a "No
+  // Frame" row), so an empty result here naturally means "no frame."
+  computeFrameStyle() {
     const framingChoice = this.selectedFramingChoice();
 
     const isFramed = Boolean(
       framingChoice?.hexColor || framingChoice?.imageUrl,
     );
 
-    wrap.classList.remove("aig-framed", "aig-framed-image");
-    wrap.style.removeProperty("--aig-frame-color");
-    wrap.style.removeProperty("--aig-frame-image");
-    wrap.style.removeProperty("--aig-frame-thickness");
-    wrap.style.removeProperty("--aig-mat-thickness");
-    wrap.style.removeProperty("--aig-frame-radius");
-    wrap.style.removeProperty("--aig-mat-color");
-    wrap.style.removeProperty("--aig-mat-image");
-
     if (!isFramed) {
-      return;
+      return { classes: [], vars: {} };
     }
+
+    const vars = {};
 
     // Per-choice overrides of the CSS's own defaults — meaningful for
     // either frame type (flat color or uploaded texture), null means
     // "use the default."
     if (framingChoice.borderThicknessPx) {
-      wrap.style.setProperty(
-        "--aig-frame-thickness",
-        `${framingChoice.borderThicknessPx}px`,
-      );
+      vars["--aig-frame-thickness"] = `${framingChoice.borderThicknessPx}px`;
     }
 
     if (framingChoice.matThicknessPx) {
-      wrap.style.setProperty(
-        "--aig-mat-thickness",
-        `${framingChoice.matThicknessPx}px`,
-      );
+      vars["--aig-mat-thickness"] = `${framingChoice.matThicknessPx}px`;
     }
 
     if (framingChoice.borderRadiusPx !== null && framingChoice.borderRadiusPx !== undefined) {
-      wrap.style.setProperty("--aig-frame-radius", `${framingChoice.borderRadiusPx}px`);
+      vars["--aig-frame-radius"] = `${framingChoice.borderRadiusPx}px`;
     }
 
     // The frame border itself: an uploaded texture (tiled/repeated via
     // border-image's own "round" keyword) takes priority over a flat
     // color when the Framing choice carries both.
+    let frameClass;
+
     if (framingChoice.imageUrl) {
-      wrap.style.setProperty(
-        "--aig-frame-image",
-        `url("${framingChoice.imageUrl}")`,
-      );
-      wrap.classList.add("aig-framed-image");
+      vars["--aig-frame-image"] = `url("${framingChoice.imageUrl}")`;
+      frameClass = "aig-framed-image";
     } else {
-      wrap.style.setProperty("--aig-frame-color", framingChoice.hexColor);
-      wrap.classList.add("aig-framed");
+      vars["--aig-frame-color"] = framingChoice.hexColor;
+      frameClass = "aig-framed";
     }
 
     // The mat — independent of how the frame border itself renders
@@ -935,10 +1485,45 @@ class AiArtGenerator extends HTMLElement {
     const matChoice = this.selectedMatColorChoice();
 
     if (matChoice?.imageUrl) {
-      wrap.style.setProperty("--aig-mat-image", `url("${matChoice.imageUrl}")`);
+      vars["--aig-mat-image"] = `url("${matChoice.imageUrl}")`;
     } else if (matChoice?.hexColor) {
-      wrap.style.setProperty("--aig-mat-color", matChoice.hexColor);
+      vars["--aig-mat-color"] = matChoice.hexColor;
     }
+
+    return { classes: [frameClass], vars };
+  }
+
+  applyFrameStyle(wrap) {
+    wrap.classList.remove("aig-framed", "aig-framed-image");
+    wrap.style.removeProperty("--aig-frame-color");
+    wrap.style.removeProperty("--aig-frame-image");
+    wrap.style.removeProperty("--aig-frame-thickness");
+    wrap.style.removeProperty("--aig-mat-thickness");
+    wrap.style.removeProperty("--aig-frame-radius");
+    wrap.style.removeProperty("--aig-mat-color");
+    wrap.style.removeProperty("--aig-mat-image");
+
+    const { classes, vars } = this.computeFrameStyle();
+
+    for (const className of classes) {
+      wrap.classList.add(className);
+    }
+
+    for (const [name, value] of Object.entries(vars)) {
+      wrap.style.setProperty(name, value);
+    }
+  }
+
+  // Safe to call any time — a no-op before a result exists (no
+  // .aig-frame-wrap on screen yet).
+  updateFramePreview() {
+    const wrap = this.querySelector(".aig-frame-wrap");
+
+    if (!wrap) {
+      return;
+    }
+
+    this.applyFrameStyle(wrap);
   }
 }
 
