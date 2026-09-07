@@ -200,6 +200,16 @@ class AiArtGenerator extends HTMLElement {
     this.generationId = null;
     this.generationResultUrl = null;
 
+    // True only during the brief async gap in selectHistoryEntry()
+    // between clicking a not-yet-cached thumbnail and its URL actually
+    // resolving — clicking the theme's native "Add to cart" in that
+    // exact window would otherwise submit before generationId is set,
+    // silently skipping the artwork property entirely (a real bug: a
+    // cart line with no artwork at all, not just the wrong one).
+    // validateForCart() blocks the submission for as long as this is
+    // true instead of racing it.
+    this.historySelectionPending = false;
+
     // A logged-in customer's own past generations for this Style, from
     // the server (see fetchServerHistory) — empty for a guest, or
     // until that fetch resolves. Merged with the always-available
@@ -381,6 +391,20 @@ class AiArtGenerator extends HTMLElement {
   // completed, not just a photo being selected, since that's the only
   // point at which there's a result to attach to the order at all.
   validateForCart() {
+    // Closes the race in selectHistoryEntry(): a previous-generation
+    // thumbnail that hasn't finished resolving its URL yet has no
+    // generationId/generationResultUrl set until that fetch completes
+    // — submitting in that exact window would otherwise silently
+    // leave the artwork property off the cart line entirely,
+    // regardless of whether the image field is "required".
+    if (this.historySelectionPending) {
+      this.flashCartError(
+        "Please wait a moment while we load your selected artwork.",
+      );
+
+      return false;
+    }
+
     const imageField = this.fields.find((field) => field.type === "IMAGE");
 
     if (imageField?.required && !this.generationResultUrl) {
@@ -1243,6 +1267,8 @@ class AiArtGenerator extends HTMLElement {
       return;
     }
 
+    this.historySelectionPending = true;
+
     let resultUrl = null;
 
     try {
@@ -1250,6 +1276,8 @@ class AiArtGenerator extends HTMLElement {
     } catch {
       resultUrl = null;
     }
+
+    this.historySelectionPending = false;
 
     if (!resultUrl) {
       this.pruneHistoryEntry(generationId);
