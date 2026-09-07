@@ -23,52 +23,44 @@
 
   const HIDDEN_MARKER = "data-aig-carrier-hidden";
 
-  // Finds the tightest ancestor whose own text is essentially just the
-  // carrier title (no theme markup gives this a dedicated class to
-  // target, so this walks up from the matching text node only while
-  // each ancestor's text stays close to the title's own length —
-  // once an ancestor's text grows well past that, the previous one
-  // was the dedicated wrapper for this one line, not a container
-  // shared with the rest of the cart line).
-  function findLineWrapper(textNode, title) {
-    let candidate = textNode.parentElement;
-    let el = candidate;
-
-    while (el && el !== document.body) {
-      const trimmed = el.textContent ? el.textContent.trim() : "";
-
-      if (trimmed.length > title.length + 40) {
-        break;
-      }
-
-      candidate = el;
-      el = el.parentElement;
-    }
-
-    return candidate;
+  function normalizeWhitespace(text) {
+    return text ? text.replace(/\s+/g, " ").trim() : "";
   }
 
+  // Matching on a single text node's nodeValue (the original approach)
+  // silently finds nothing whenever a theme splits a line's markup
+  // across more than one text node or inline element (e.g. the em
+  // dash and the rest of the title each getting their own <span>) —
+  // textContent aggregates across all of an element's descendants, so
+  // matching against that instead is robust to however a given theme
+  // happens to structure one cart line's markup. Elements are checked
+  // deepest-first (reverse document order) so the tightest wrapper for
+  // a line — not some much larger ancestor that happens to still
+  // contain the same text — is the one that gets hidden; once a
+  // descendant is hidden, its still-in-the-DOM text would otherwise
+  // make every ancestor look like a match too, so those are skipped.
   function hideCarrierLines(root) {
+    if (typeof root.querySelectorAll !== "function") {
+      return;
+    }
+
+    const elements = Array.from(root.querySelectorAll("*")).reverse();
+
     for (const title of INTERNAL_CARRIER_TITLES) {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-        acceptNode(node) {
-          return node.nodeValue && node.nodeValue.includes(title)
-            ? NodeFilter.FILTER_ACCEPT
-            : NodeFilter.FILTER_SKIP;
-        },
-      });
-
-      let node = walker.nextNode();
-
-      while (node) {
-        const wrapper = findLineWrapper(node, title);
-
-        if (wrapper && !wrapper.hasAttribute(HIDDEN_MARKER)) {
-          wrapper.setAttribute(HIDDEN_MARKER, "true");
-          wrapper.hidden = true;
+      for (const el of elements) {
+        if (
+          el.hasAttribute(HIDDEN_MARKER) ||
+          el.querySelector(`[${HIDDEN_MARKER}]`)
+        ) {
+          continue;
         }
 
-        node = walker.nextNode();
+        if (!normalizeWhitespace(el.textContent).includes(title)) {
+          continue;
+        }
+
+        el.setAttribute(HIDDEN_MARKER, "true");
+        el.hidden = true;
       }
     }
   }
@@ -150,10 +142,87 @@
     }
   }
 
+  // Some themes (e.g. Shopify's newer Web Component-based cart
+  // drawers) render their cart contents inside an open shadow root
+  // rather than plain light DOM — a TreeWalker rooted at document.body
+  // never sees into those, which is why the carrier titles above kept
+  // showing up even with hideCarrierLines() in place. processRoot()
+  // treats document.body and every open shadow root it finds (however
+  // deeply nested) the same way: scan/hide within it, then watch it
+  // (via its own MutationObserver, since observing document.body with
+  // {subtree:true} does not cross shadow boundaries either) for
+  // further changes and newly-appeared shadow roots.
+  const observedRoots = new WeakSet();
+
+  function discoverShadowRoots(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+
+    let el = walker.nextNode();
+
+    while (el) {
+      if (el.shadowRoot && !observedRoots.has(el.shadowRoot)) {
+        processRoot(el.shadowRoot);
+      }
+
+      el = walker.nextNode();
+    }
+  }
+
+  function observeRoot(root) {
+    if (observedRoots.has(root)) {
+      return;
+    }
+
+    observedRoots.add(root);
+
+    let scheduled = false;
+
+    const observer = new MutationObserver(() => {
+      if (scheduled) {
+        return;
+      }
+
+      scheduled = true;
+
+      requestAnimationFrame(() => {
+        scheduled = false;
+        processRoot(root);
+      });
+    });
+
+    observer.observe(root, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  }
+
+  function processRoot(root) {
+    scan(root);
+    hideCarrierLines(root);
+    observeRoot(root);
+    discoverShadowRoots(root);
+  }
+
+  // A component that attaches its shadow root after this script has
+  // already run (e.g. one defined/upgraded later) would otherwise
+  // never be found by discoverShadowRoots() — this catches it the
+  // moment it's created. queueMicrotask gives the component a chance
+  // to populate its own shadow DOM on this same turn before the first
+  // scan runs.
+  const originalAttachShadow = Element.prototype.attachShadow;
+
+  Element.prototype.attachShadow = function attachShadow(init) {
+    const shadowRoot = originalAttachShadow.call(this, init);
+
+    queueMicrotask(() => processRoot(shadowRoot));
+
+    return shadowRoot;
+  };
+
   function run() {
     if (document.body) {
-      scan(document.body);
-      hideCarrierLines(document.body);
+      processRoot(document.body);
     }
   }
 
@@ -161,40 +230,5 @@
     document.addEventListener("DOMContentLoaded", run);
   } else {
     run();
-  }
-
-  // Cart drawers/pages usually render their contents after an
-  // AJAX add-to-cart, well after this script first runs — a debounced
-  // MutationObserver catches that (and any theme re-rendering the cart
-  // later) without polling.
-  let scheduled = false;
-
-  const observer = new MutationObserver(() => {
-    if (scheduled) {
-      return;
-    }
-
-    scheduled = true;
-
-    requestAnimationFrame(() => {
-      scheduled = false;
-      run();
-    });
-  });
-
-  if (document.body) {
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-  } else {
-    document.addEventListener("DOMContentLoaded", () => {
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-      });
-    });
   }
 })();
