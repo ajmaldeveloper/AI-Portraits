@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import sharp from "sharp";
+import sharp, { type FormatEnum } from "sharp";
 
 import { verifySignedStyleAssetRequest } from "../services/media/media-signing.server";
 import { getStyleAssetBinary } from "../services/styles/style-product-media.server";
@@ -39,7 +39,13 @@ async function applyFrame(
   // sharp's .extend() doesn't stack across chained calls on the same
   // pipeline — the second call's config replaces the first's rather
   // than adding to it — so the mat has to be materialized to a buffer
-  // before the frame border extend runs on a fresh pipeline.
+  // before the frame border extend runs on a fresh pipeline. That
+  // buffer is thrown away the instant the next sharp() call decodes
+  // it, so it's encoded as fast, uncompressed PNG rather than
+  // whatever the source format was (WebP re-encoding in particular is
+  // slow) — the *final* output's own format/quality is set explicitly
+  // in the route below, so this intermediate step never affects the
+  // quality the customer actually gets.
   const withMat = await pipeline
     .extend({
       top: matThickness,
@@ -48,6 +54,7 @@ async function applyFrame(
       right: matThickness,
       background: matHex ? hexToRgb(matHex) : DEFAULT_MAT_RGB,
     })
+    .png({ compressionLevel: 0 })
     .toBuffer();
 
   return sharp(withMat).extend({
@@ -177,9 +184,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     // well-regarded resampling kernel rather than a soft/blurry one.
     // This is high-quality interpolation, not AI super-resolution — no
     // detail beyond what's already in the source image is invented.
+    // Same fast-uncompressed-PNG intermediate as applyFrame below —
+    // this buffer is immediately re-decoded, never sent to the
+    // customer, so there's no reason to pay for a slow, lossy re-encode
+    // just to throw it away a moment later.
     pipeline = sharp(
       await pipeline
         .resize({ width: targetWidth, kernel: sharp.kernel.lanczos3 })
+        .png({ compressionLevel: 0 })
         .toBuffer(),
     );
   }
@@ -188,7 +200,19 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     pipeline = await applyFrame(pipeline, frame, mat);
   }
 
-  const output = await pipeline.toBuffer();
+  // Only intermediate steps ever skip straight to a fast PNG — the
+  // response actually sent to the customer always matches the format
+  // already promised by Content-Type/the stored asset's own mimeType,
+  // at the same quality (85) the asset was originally compressed at
+  // (compressGeneratedImage) — matching it exactly rather than
+  // reaching for a higher number keeps this second encode from
+  // quietly ballooning the file back up while adding no visible
+  // quality over the original.
+  const outputFormat = extension as unknown as keyof FormatEnum;
+
+  const output = await pipeline
+    .toFormat(outputFormat, { quality: 85 })
+    .toBuffer();
 
   return new Response(output, { headers });
 };
