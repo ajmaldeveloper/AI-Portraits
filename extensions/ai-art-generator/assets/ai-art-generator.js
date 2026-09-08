@@ -302,17 +302,16 @@ class AiArtGenerator extends HTMLElement {
         );
       }
 
-      // A "_"-prefixed key — kept private on any theme whose own
-      // cart/checkout templates respect that convention (Shopify's
-      // default ones do; many custom themes' don't, which is a
-      // per-theme opt-in, not a platform guarantee). On a theme that
-      // does filter it, this property never reaches the rendered HTML
-      // at all, so cart-artwork-link.js has nothing to convert into a
-      // thumbnail there — a real trade-off, but privacy wins over that
-      // gap: better to sometimes not swap the thumbnail than to ever
-      // show a customer their own raw signed-looking URL as plain
-      // cart text on a theme that doesn't filter it and where the
-      // embed happens to not be running.
+      // Deliberately NOT a "_"-prefixed key. Confirmed directly against
+      // a real cart's rendered HTML: on themes built on Shopify's newer
+      // cart template (class names like cart-items__*), an underscore
+      // key is stripped server-side before the page ever reaches the
+      // browser — cart-artwork-link.js has nothing to find there no
+      // matter how it's written, since the text it needs was never
+      // rendered at all. A plain key always survives, so the thumbnail
+      // swap actually works everywhere; the trade-off is this shows as
+      // a plain "Your artwork: [link]" line in the cart's own
+      // properties list rather than staying hidden.
       //
       // The short redirect link (no query string/signature, beyond an
       // optional frame/mat color) is the value, so even the plain-text
@@ -349,7 +348,7 @@ class AiArtGenerator extends HTMLElement {
         }
 
         event.formData.set(
-          "properties[_ai_art_preview]",
+          "properties[Your artwork]",
           artworkUrl.toString(),
         );
       }
