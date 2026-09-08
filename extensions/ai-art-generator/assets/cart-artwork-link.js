@@ -13,8 +13,13 @@
 // line items.
 
 (function () {
+  // The trailing (?:\?[^\s"'<>]*)? is required — a Framing choice with
+  // a color passes ?frame=<hex>&mat=<hex> on this URL (see
+  // ai-art-generator.js's own "Your artwork" property), and without
+  // it the match stops at the generation id, leaving the query string
+  // behind as dangling plain text right after the converted link.
   const ARTWORK_URL_PATTERN =
-    /https?:\/\/[^\s"'<>]*\/apps\/[a-z0-9-]+\/artwork\/[a-z0-9]+/gi;
+    /https?:\/\/[^\s"'<>]*\/apps\/[a-z0-9-]+\/artwork\/[a-z0-9]+(?:\?[^\s"'<>]*)?/gi;
 
   // Must match ADJUSTMENT_PRODUCT_TITLE / SHIPPING_PRODUCT_TITLE in
   // app/services/styles/style-pricing-sync.server.ts exactly.
