@@ -131,17 +131,20 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   // publicly doesn't leak anything a bearer of the URL couldn't already
   // fetch directly.
   //
-  // Content-Disposition: attachment only affects a direct top-level
-  // navigation to this URL (e.g. clicking the "See your artwork" cart
-  // line item link) — it's ignored for the same URL used as an <img
-  // src>, which is how the storefront itself renders it — so this is
-  // safe to set unconditionally rather than needing a separate
-  // download-only endpoint.
+  // Content-Disposition: inline (not attachment) — the cart's own
+  // "Preview" link opens this as a direct top-level navigation in a
+  // new tab, and forcing a download there meant an empty tab briefly
+  // flashed open and then closed itself once the browser realized
+  // there was nothing to render, which read as broken even when the
+  // download quietly succeeded. inline still names the file
+  // (filename=) for whenever the customer explicitly chooses to save
+  // it, and is ignored entirely for the same URL used as an <img
+  // src>, which is how the storefront itself renders it.
   const headers = {
     "Content-Type": contentType,
     "Cache-Control": "public, max-age=31536000, immutable",
     "X-Content-Type-Options": "nosniff",
-    "Content-Disposition": `attachment; filename="artwork-${assetId}.${extension}"`,
+    "Content-Disposition": `inline; filename="artwork-${assetId}.${extension}"`,
   };
 
   const isImage = contentType.startsWith("image/");

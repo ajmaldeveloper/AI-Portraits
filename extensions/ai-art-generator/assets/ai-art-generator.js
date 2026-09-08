@@ -322,9 +322,9 @@ class AiArtGenerator extends HTMLElement {
       // in as what was actually ordered — see
       // media.style-assets.$assetId.ts. An uploaded frame texture
       // isn't baked into the linked file (see that route's own
-      // comment on the scope boundary). The link itself still downloads
-      // on click (Content-Disposition: attachment on the redirect
-      // target).
+      // comment on the scope boundary). The link itself opens as a
+      // preview on click (Content-Disposition: inline on the redirect
+      // target), not a forced download.
       if (this.generationId) {
         const artworkUrl = new URL(
           `${this.proxyRoot}/artwork/${encodeURIComponent(this.generationId)}`,

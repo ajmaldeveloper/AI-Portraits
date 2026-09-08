@@ -3,7 +3,7 @@
 // template. Runs on every page (the cart drawer is usually part of the
 // global layout, so no dedicated "cart page" navigation is needed for
 // this to catch it): (1) turns this app's own short artwork preview
-// links into a clean "Image" link, (2) swaps that same line's cart
+// links into a clean "Preview Image" link, (2) swaps that same line's cart
 // thumbnail for the customer's own generated artwork instead of the
 // product's generic photo, and (3) hides the two invisible carrier
 // products (see style-pricing-sync.server.ts) the Cart Transform
@@ -100,22 +100,21 @@
       const link = document.createElement("a");
 
       link.href = url;
-      link.textContent = "Image";
+      link.textContent = "Preview Image";
       link.className = "aig-artwork-link";
       link.target = "_blank";
       link.rel = "noopener";
 
-      // No download attribute — this link is same-origin but its own
-      // URL is a 302 redirect (see app-proxy.artwork.$generationId.tsx)
-      // to the actual signed image, and at least Safari doesn't
-      // reliably follow a redirect for a download-attributed link: it
-      // tries to save the empty redirect response itself instead,
-      // producing a meaningless "<id>.txt" ("File wasn't available on
-      // site"). Leaving it off lets the browser follow the redirect
-      // normally; the final response's own Content-Disposition header
-      // (media.style-assets.$assetId.ts, filename + extension already
-      // derived from the stored image's real mimeType) still forces
-      // the download with the correct name either way.
+      // No download attribute — this is meant to open as a preview in
+      // the new tab, not force a save dialog (media.style-assets sends
+      // Content-Disposition: inline for exactly this). A download
+      // attribute here also used to actively break things: the link's
+      // own URL is a 302 redirect (see
+      // app-proxy.artwork.$generationId.tsx) to the actual signed
+      // image, and at least Safari doesn't reliably follow a redirect
+      // for a download-attributed link — it tries to save the empty
+      // redirect response itself instead, producing a meaningless
+      // "<id>.txt" ("File wasn't available on site").
       fragment.appendChild(link);
 
       lastIndex = match.index + url.length;

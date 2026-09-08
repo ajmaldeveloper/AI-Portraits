@@ -9,7 +9,9 @@ import { authenticate } from "../shopify.server";
 // long signed media URL directly (query string, HMAC signature, and
 // all), which is what a customer would otherwise see pasted as plain
 // text in their cart. Redirects (not proxies) straight to the signed
-// URL, which itself serves with Content-Disposition: attachment.
+// URL, which itself serves with Content-Disposition: inline, so
+// clicking the cart's "Preview Image" link opens it in the new tab
+// rather than forcing a download.
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session } = await authenticate.public.appProxy(request);
 
