@@ -165,11 +165,17 @@
         continue;
       }
 
-      link.setAttribute(THUMBNAIL_SWAPPED_MARKER, "true");
-
       let ancestor = link.parentElement;
       let hops = 0;
 
+      // Only mark this link done once an <img> is actually found and
+      // swapped — marking it upfront (the previous approach) meant a
+      // cart drawer that renders this line's thumbnail a beat after
+      // its properties/link text (a real timing gap during
+      // progressive rendering) permanently gave up after one failed
+      // look, leaving the generic product photo in place for good.
+      // Leaving it unmarked lets the next mutation-triggered scan
+      // (see observeRoot) retry for free once the <img> shows up.
       while (ancestor && hops < 8) {
         const img = ancestor.querySelector("img");
 
@@ -177,6 +183,7 @@
           img.src = link.href;
           img.removeAttribute("srcset");
           img.removeAttribute("sizes");
+          link.setAttribute(THUMBNAIL_SWAPPED_MARKER, "true");
           break;
         }
 
