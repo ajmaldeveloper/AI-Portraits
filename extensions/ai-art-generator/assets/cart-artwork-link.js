@@ -104,8 +104,18 @@
       link.className = "aig-artwork-link";
       link.target = "_blank";
       link.rel = "noopener";
-      link.setAttribute("download", "");
 
+      // No download attribute — this link is same-origin but its own
+      // URL is a 302 redirect (see app-proxy.artwork.$generationId.tsx)
+      // to the actual signed image, and at least Safari doesn't
+      // reliably follow a redirect for a download-attributed link: it
+      // tries to save the empty redirect response itself instead,
+      // producing a meaningless "<id>.txt" ("File wasn't available on
+      // site"). Leaving it off lets the browser follow the redirect
+      // normally; the final response's own Content-Disposition header
+      // (media.style-assets.$assetId.ts, filename + extension already
+      // derived from the stored image's real mimeType) still forces
+      // the download with the correct name either way.
       fragment.appendChild(link);
 
       lastIndex = match.index + url.length;
