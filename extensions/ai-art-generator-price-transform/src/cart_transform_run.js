@@ -50,8 +50,6 @@ function computeStyleTotal(style, selections) {
 
   let total = numberOrNull(style.basePrice) ?? 0;
 
-  let framingRequiresShipping = false;
-
   for (const option of options) {
     const choiceId = selections[option.id];
 
@@ -66,13 +64,9 @@ function computeStyleTotal(style, selections) {
     }
 
     total += numberOrNull(choice.priceDelta) ?? 0;
-
-    if (option.axisRole === "FRAMING" && choice.requiresShipping) {
-      framingRequiresShipping = true;
-    }
   }
 
-  return { total: roundMoney(total), requiresShipping: framingRequiresShipping };
+  return roundMoney(total);
 }
 
 export function cartTransformRun(input) {
@@ -87,13 +81,6 @@ export function cartTransformRun(input) {
   ) {
     return NO_CHANGES;
   }
-
-  const shippingConfig = asObject(
-    input?.cartTransform?.shippingConfig?.jsonValue,
-  );
-
-  const shippingVariantId =
-    shippingConfig?.version === 1 ? shippingConfig.shippingVariantId : null;
 
   // Each shard metafield holds { [styleId]: styleConfig, ... } for
   // whichever styles landed in that shard at write time (see
@@ -144,7 +131,7 @@ export function cartTransformRun(input) {
       continue;
     }
 
-    const computed = computeStyleTotal(style, selections);
+    const total = computeStyleTotal(style, selections);
 
     const basePrice = numberOrNull(line.cost.amountPerQuantity.amount);
 
@@ -152,62 +139,40 @@ export function cartTransformRun(input) {
       continue;
     }
 
-    const surcharge = roundMoney(computed.total - basePrice);
+    const surcharge = roundMoney(total - basePrice);
     const presentmentSurcharge = roundMoney(surcharge * presentmentRate);
 
-    const needsPriceLine = Math.abs(presentmentSurcharge) > EPSILON;
-    const needsShippingLine = computed.requiresShipping && Boolean(shippingVariantId);
-
-    if (!needsPriceLine && !needsShippingLine) {
+    if (Math.abs(presentmentSurcharge) <= EPSILON) {
       continue;
-    }
-
-    const expandedCartItems = [
-      {
-        merchandiseId: line.merchandise.id,
-        quantity: 1,
-        price: {
-          adjustment: {
-            fixedPricePerUnit: {
-              amount: basePrice.toFixed(2),
-            },
-          },
-        },
-      },
-    ];
-
-    if (needsPriceLine) {
-      expandedCartItems.push({
-        merchandiseId: adjustmentConfig.adjustmentVariantId,
-        quantity: 1,
-        price: {
-          adjustment: {
-            fixedPricePerUnit: {
-              amount: presentmentSurcharge.toFixed(2),
-            },
-          },
-        },
-      });
-    }
-
-    if (needsShippingLine) {
-      expandedCartItems.push({
-        merchandiseId: shippingVariantId,
-        quantity: 1,
-        price: {
-          adjustment: {
-            fixedPricePerUnit: {
-              amount: "0.00",
-            },
-          },
-        },
-      });
     }
 
     operations.push({
       lineExpand: {
         cartLineId: line.id,
-        expandedCartItems,
+        expandedCartItems: [
+          {
+            merchandiseId: line.merchandise.id,
+            quantity: 1,
+            price: {
+              adjustment: {
+                fixedPricePerUnit: {
+                  amount: basePrice.toFixed(2),
+                },
+              },
+            },
+          },
+          {
+            merchandiseId: adjustmentConfig.adjustmentVariantId,
+            quantity: 1,
+            price: {
+              adjustment: {
+                fixedPricePerUnit: {
+                  amount: presentmentSurcharge.toFixed(2),
+                },
+              },
+            },
+          },
+        ],
       },
     });
   }

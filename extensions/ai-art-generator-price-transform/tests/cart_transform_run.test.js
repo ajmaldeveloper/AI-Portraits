@@ -7,11 +7,6 @@ const ADJUSTMENT_CONFIG = {
   adjustmentVariantId: "gid://shopify/ProductVariant/1",
 };
 
-const SHIPPING_CONFIG = {
-  version: 1,
-  shippingVariantId: "gid://shopify/ProductVariant/2",
-};
-
 const STYLE_ID = "style-1";
 
 const SIZE_OPTION_ID = "opt-size";
@@ -35,8 +30,8 @@ const STYLE_WITH_SIZE_AND_FRAMING = {
       id: FRAMING_OPTION_ID,
       axisRole: "FRAMING",
       choices: [
-        { id: "frame-none", priceDelta: null, requiresShipping: false },
-        { id: "frame-black", priceDelta: "50.00", requiresShipping: true },
+        { id: "frame-none", priceDelta: null },
+        { id: "frame-black", priceDelta: "50.00" },
       ],
     },
   ],
@@ -45,7 +40,6 @@ const STYLE_WITH_SIZE_AND_FRAMING = {
 function buildInput({
   pricingShards = [{ [STYLE_ID]: STYLE_WITH_SIZE_AND_FRAMING }, {}, {}],
   adjustmentConfig = ADJUSTMENT_CONFIG,
-  shippingConfig = SHIPPING_CONFIG,
   lines,
   presentmentCurrencyRate = 1,
 }) {
@@ -53,7 +47,6 @@ function buildInput({
     presentmentCurrencyRate,
     cartTransform: {
       adjustmentConfig: adjustmentConfig ? { jsonValue: adjustmentConfig } : null,
-      shippingConfig: shippingConfig ? { jsonValue: shippingConfig } : null,
       pricingShard0: { jsonValue: pricingShards[0] ?? {} },
       pricingShard1: { jsonValue: pricingShards[1] ?? {} },
       pricingShard2: { jsonValue: pricingShards[2] ?? {} },
@@ -90,7 +83,7 @@ describe("cartTransformRun", () => {
     expect(result.operations).toEqual([]);
   });
 
-  test("size + framing selection produces a price line and a shipping line", () => {
+  test("size + framing selection produces a price line", () => {
     const result = cartTransformRun(
       buildInput({
         lines: [
@@ -110,6 +103,9 @@ describe("cartTransformRun", () => {
     // base $40 + large size (+$49) + black frame (+$50) = $139 total;
     // the original line is already priced at $40 (its Shopify variant
     // price), so the surcharge line must carry the remaining $99.
+    // Shipping is no longer a per-Framing-choice concern (every
+    // product's own variant now always requires shipping — see
+    // style-publish.server.ts), so there's no separate carrier line.
     expect(result.operations).toEqual([
       {
         lineExpand: {
@@ -124,11 +120,6 @@ describe("cartTransformRun", () => {
               merchandiseId: "gid://shopify/ProductVariant/1",
               quantity: 1,
               price: { adjustment: { fixedPricePerUnit: { amount: "99.00" } } },
-            },
-            {
-              merchandiseId: "gid://shopify/ProductVariant/2",
-              quantity: 1,
-              price: { adjustment: { fixedPricePerUnit: { amount: "0.00" } } },
             },
           ],
         },
@@ -155,8 +146,7 @@ describe("cartTransformRun", () => {
 
     // base $40 + small size (+$0) + no frame (+$0) = $40 total,
     // exactly matching the line's already-charged price, so no
-    // operation is needed — nothing to adjust and no shipping carrier
-    // line to add.
+    // operation is needed — nothing to adjust.
     expect(result.operations).toEqual([]);
   });
 

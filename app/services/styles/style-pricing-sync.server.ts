@@ -10,7 +10,6 @@ type AdminGraphqlClient = Awaited<
 
 const METAFIELD_NAMESPACE = "$app";
 const ADJUSTMENT_METAFIELD_KEY = "aig_adjustment_config";
-const SHIPPING_METAFIELD_KEY = "aig_shipping_config";
 
 // Kept identical (duplicated) in
 // extensions/ai-art-generator-price-transform/src/cart_transform_run.graphql
@@ -42,10 +41,6 @@ const ADJUSTMENT_PRODUCT_HANDLE = "ai-art-studio-pricing-adjustment";
 const ADJUSTMENT_PRODUCT_TITLE = "Winslet AI Portraits — pricing adjustment";
 const ADJUSTMENT_PRODUCT_SKU = "AI-ART-STUDIO-ADJUSTMENT";
 
-const SHIPPING_PRODUCT_HANDLE = "ai-art-studio-shipping-carrier";
-const SHIPPING_PRODUCT_TITLE = "Winslet AI Portraits — shipping carrier";
-const SHIPPING_PRODUCT_SKU = "AI-ART-STUDIO-SHIPPING-CARRIER";
-
 type GraphqlEnvelope<T> = {
   data?: T;
   errors?: Array<{ message?: string }>;
@@ -64,7 +59,6 @@ function graphqlErrorMessage<T>(payload: GraphqlEnvelope<T>) {
 type TrustedChoice = {
   id: string;
   priceDelta: string;
-  requiresShipping: boolean;
 };
 
 type TrustedOption = {
@@ -94,7 +88,6 @@ async function buildTrustedPricingConfig(shop: string) {
             select: {
               id: true,
               priceDelta: true,
-              requiresShipping: true,
             },
           },
         },
@@ -123,7 +116,6 @@ async function buildTrustedPricingConfig(shop: string) {
         choices: option.choices.map((choice) => ({
           id: choice.id,
           priceDelta: (choice.priceDelta ?? 0).toString(),
-          requiresShipping: choice.requiresShipping,
         })),
       })),
     };
@@ -132,22 +124,26 @@ async function buildTrustedPricingConfig(shop: string) {
   return trustedStyles;
 }
 
-// --- The two invisible, never-customer-facing carrier products -----------
+// --- The invisible, never-customer-facing price-adjustment product -------
 //
-// Both are hidden (UNLISTED) products with exactly one variant, created
-// lazily on first sync. Neither is ever selected by a customer — the
-// Function references each variant's id directly by GID, read back off
-// its own config metafield. The adjustment variant carries the price
-// surcharge; the shipping variant exists purely so Shopify decides an
-// order needs physical shipping when a Framing choice calls for it
-// (Shopify decides that per-variant, not something the Function can
-// set directly on a cart line).
+// A hidden (UNLISTED) product with exactly one variant, created lazily
+// on first sync. Never selected by a customer — the Function
+// references its variant id directly by GID, read back off its own
+// config metafield, to carry the price surcharge on top of the
+// line's own base price.
+//
+// There used to be a second carrier product here purely to make
+// Shopify treat an order as requiring physical shipping when a
+// Framing choice called for it (shipping is decided per-variant, not
+// something a Cart Transform Function can set directly on a cart
+// line) — removed once every product's own base variant was made to
+// always require shipping (see style-publish.server.ts), since every
+// order this app sells is a physical print regardless of framing.
 
 type CarrierRecipe = {
   handle: string;
   title: string;
   sku: string;
-  requiresShipping: boolean;
 };
 
 async function findCarrierVariant(admin: AdminGraphqlClient, handle: string) {
@@ -228,7 +224,10 @@ async function configureCarrierVariant(
             taxable: false,
             inventoryItem: {
               tracked: false,
-              requiresShipping: recipe.requiresShipping,
+              // Never its own shipping concern — it exists purely to
+              // carry a price adjustment, quantity 1, alongside the
+              // line's own already-physical variant.
+              requiresShipping: false,
               sku: recipe.sku,
             },
           },
@@ -336,14 +335,6 @@ const ADJUSTMENT_RECIPE: CarrierRecipe = {
   handle: ADJUSTMENT_PRODUCT_HANDLE,
   title: ADJUSTMENT_PRODUCT_TITLE,
   sku: ADJUSTMENT_PRODUCT_SKU,
-  requiresShipping: false,
-};
-
-const SHIPPING_RECIPE: CarrierRecipe = {
-  handle: SHIPPING_PRODUCT_HANDLE,
-  title: SHIPPING_PRODUCT_TITLE,
-  sku: SHIPPING_PRODUCT_SKU,
-  requiresShipping: true,
 };
 
 async function setTrustedConfigMetafields(
@@ -351,7 +342,6 @@ async function setTrustedConfigMetafields(
   transformId: string,
   styles: Record<string, TrustedStyle>,
   adjustmentVariantId: string,
-  shippingVariantId: string,
 ) {
   const shardPayloads: Array<Record<string, TrustedStyle>> = Array.from(
     { length: PRICING_SHARD_COUNT },
@@ -371,13 +361,6 @@ async function setTrustedConfigMetafields(
       key: ADJUSTMENT_METAFIELD_KEY,
       type: "json",
       value: JSON.stringify({ version: 1, adjustmentVariantId }),
-    },
-    {
-      ownerId: transformId,
-      namespace: METAFIELD_NAMESPACE,
-      key: SHIPPING_METAFIELD_KEY,
-      type: "json",
-      value: JSON.stringify({ version: 1, shippingVariantId }),
     },
     ...shardPayloads.map((payload, shard) => ({
       ownerId: transformId,
@@ -459,17 +442,13 @@ export async function syncStylePricingToShopify(
       };
     }
 
-    const [adjustment, shipping] = await Promise.all([
-      ensureCarrierVariant(admin, ADJUSTMENT_RECIPE),
-      ensureCarrierVariant(admin, SHIPPING_RECIPE),
-    ]);
+    const adjustment = await ensureCarrierVariant(admin, ADJUSTMENT_RECIPE);
 
     await setTrustedConfigMetafields(
       admin,
       transformId,
       styles,
       adjustment.variantId,
-      shipping.variantId,
     );
 
     return { ok: true, styleCount: Object.keys(styles).length };

@@ -9,10 +9,6 @@ query CartTransformRunInput {
       jsonValue
     }
 
-    shippingConfig: metafield(namespace: "$app", key: "aig_shipping_config") {
-      jsonValue
-    }
-
     # Styles are distributed across a fixed number of "shard" metafields
     # (rather than one combined blob) so each stays well under the
     # ~10KB ceiling a Function's jsonValue resolution enforces per

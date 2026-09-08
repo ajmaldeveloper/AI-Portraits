@@ -272,13 +272,13 @@ async function upsertShopifyProduct(
           // purchasable regardless of on-hand quantity (inventoryPolicy
           // CONTINUE). Inventory itself stays tracked (not tracked:
           // false) so the merchant still gets normal sold-count
-          // reporting. requiresShipping is always false here — a
-          // Framing choice that needs physical shipping carries it via
-          // a second, invisible cart line instead (see
-          // style-pricing-sync.server.ts), never via this variant.
+          // reporting. requiresShipping is always true — every order
+          // this app sells is a physical print, framed or not, so
+          // there's no per-Framing-choice shipping distinction to
+          // carry via a separate cart line.
           inventoryItem: {
             tracked: true,
-            requiresShipping: false,
+            requiresShipping: true,
           },
           inventoryPolicy: "CONTINUE",
         },
