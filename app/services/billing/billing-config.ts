@@ -19,8 +19,8 @@ export const PRO_PLAN_HANDLE = "pro";
 // by Shopify under Shopify App Pricing (Partner Dashboard > Pricing),
 // not by this app. Keep these in sync with that page if the price ever
 // changes there.
-export const PRO_PLAN_MONTHLY_PRICE = 19.99;
-export const PRO_PLAN_YEARLY_PRICE = 199.99;
+export const PRO_PLAN_MONTHLY_PRICE = 29.99;
+export const PRO_PLAN_YEARLY_PRICE = 299.99;
 export const PRO_PLAN_TRIAL_DAYS = 3;
 
 // Free plan limits — enforced locally, independent of Shopify billing.
