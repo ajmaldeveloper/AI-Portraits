@@ -275,3 +275,184 @@ export async function generateGoogleImages(
     requestId: lastRequestId,
   };
 }
+
+export type EditGoogleImageInput = {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  aspectRatio: string;
+  quality: "low" | "medium" | "high";
+  image: {
+    bytes: Uint8Array;
+    mimeType: string;
+  };
+};
+
+export type EditGoogleImageResult = {
+  image: GoogleGeneratedImage;
+  model: string;
+  requestId: string | null;
+};
+
+type GenerateContentPart = {
+  text?: string;
+  inlineData?: {
+    mimeType?: string;
+    data?: string;
+  };
+};
+
+type GenerateContentResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: GenerateContentPart[];
+    };
+    finishReason?: string;
+  }>;
+  promptFeedback?: {
+    blockReason?: string;
+  };
+  error?: {
+    message?: string;
+    status?: string;
+    code?: number;
+  };
+};
+
+/**
+ * Edits a customer-uploaded image with Gemini. Unlike the merchant
+ * example-image flow above, this request includes the customer's photo
+ * as inline image data alongside the style prompt.
+ */
+export async function editGoogleImage(
+  input: EditGoogleImageInput,
+): Promise<EditGoogleImageResult> {
+  const apiKey = input.apiKey.trim();
+  const prompt = input.prompt.trim();
+
+  if (!apiKey) {
+    throw new GoogleImageError("A Google Gemini API key is required.", {
+      code: "google_not_configured",
+    });
+  }
+
+  if (!prompt) {
+    throw new GoogleImageError("Image prompt is required.", {
+      code: "missing_prompt",
+    });
+  }
+
+  if (prompt.length > 32000) {
+    throw new GoogleImageError("Image prompt is too long.", {
+      code: "prompt_too_long",
+    });
+  }
+
+  if (input.image.bytes.byteLength === 0) {
+    throw new GoogleImageError("The uploaded photo is empty.", {
+      code: "empty_input_image",
+    });
+  }
+
+  const model = input.model.trim() || "gemini-3.1-flash-image";
+  const imageCopy = new Uint8Array(input.image.bytes.byteLength);
+  imageCopy.set(input.image.bytes);
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  mimeType: input.image.mimeType,
+                  data: Buffer.from(imageCopy).toString("base64"),
+                },
+              },
+              { text: prompt },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig: {
+            aspectRatio: input.aspectRatio,
+            // Gemini 2.5 Flash Image supports aspect-ratio selection;
+            // the imageSize option is available on the Gemini 3 image models.
+            ...(model.startsWith("gemini-2.5-")
+              ? {}
+              : { imageSize: imageSizeFor(input.quality) }),
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(180000),
+    },
+  );
+
+  const requestId =
+    response.headers.get("x-goog-request-id") ??
+    response.headers.get("x-request-id");
+
+  let payload: GenerateContentResponse;
+
+  try {
+    payload = (await response.json()) as GenerateContentResponse;
+  } catch {
+    throw new GoogleImageError(
+      `Google returned an unreadable response (${response.status}).`,
+      {
+        code: `http_${response.status}`,
+        requestId,
+      },
+    );
+  }
+
+  if (!response.ok) {
+    throw new GoogleImageError(
+      payload.error?.message ||
+        `Google image editing failed with status ${response.status}.`,
+      {
+        code: payload.error?.status || `http_${response.status}`,
+        requestId,
+      },
+    );
+  }
+
+  const parts = payload.candidates?.flatMap(
+    (candidate) => candidate.content?.parts ?? [],
+  ) ?? [];
+  const imagePart = parts.find(
+    (part) => part.inlineData?.data && part.inlineData.mimeType,
+  );
+  const textPart = parts.find((part) => part.text?.trim());
+
+  if (!imagePart?.inlineData?.data) {
+    const blockReason = payload.promptFeedback?.blockReason;
+    throw new GoogleImageError(
+      blockReason
+        ? `Google could not process this image request (${blockReason}). Try a different photo or prompt.`
+        : "Google completed the request but returned no edited image. Check that the selected Gemini model supports image output.",
+      {
+        code: blockReason || "no_images_returned",
+        requestId,
+      },
+    );
+  }
+
+  return {
+    image: {
+      bytes: decodeBase64Image(imagePart.inlineData.data),
+      revisedPrompt: textPart?.text ?? null,
+    },
+    model,
+    requestId,
+  };
+}

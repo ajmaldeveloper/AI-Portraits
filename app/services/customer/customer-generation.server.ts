@@ -12,6 +12,7 @@ import {
   toDatabaseBytes,
 } from "../ai/image-output.server";
 import { OpenAIImageError, editOpenAIImage } from "../ai/openai-image.server";
+import { GoogleImageError, editGoogleImage } from "../ai/google-image.server";
 import {
   PlanLimitError,
   assertCanGenerate,
@@ -142,12 +143,11 @@ export async function startCustomerGeneration(
     );
   }
 
-  // Only OpenAI supports editing an uploaded photo today — Google and
-  // Flux only have the text-to-image path used for storefront
-  // examples. Extending those is tracked separately.
-  if (credentials.provider !== "openai") {
+  // Customer photo editing is implemented for OpenAI and Google Gemini.
+  // FLUX remains available for merchant-generated example images only.
+  if (credentials.provider !== "openai" && credentials.provider !== "google") {
     throw new CustomerGenerationError(
-      "This shop's configured AI provider doesn't support photo personalization yet.",
+      "Customer photo personalization is currently supported with OpenAI and Google Gemini. Please change this shop's AI provider in settings.",
     );
   }
 
@@ -208,6 +208,7 @@ export async function startCustomerGeneration(
     aspectRatio: style.outputAspectRatio,
     quality: style.outputQuality,
     apiKey: credentials.apiKey,
+    provider: credentials.provider,
     model: credentials.model,
     prompt,
     photo: input.photo,
@@ -225,6 +226,7 @@ async function runCustomerGeneration(input: {
   aspectRatio: string;
   quality: string;
   apiKey: string;
+  provider: string;
   model: string | null;
   prompt: string;
   photo: { bytes: Uint8Array; mimeType: string };
@@ -239,19 +241,28 @@ async function runCustomerGeneration(input: {
     // startProgressAnimation), so paying for the extra streaming
     // round trips, compression, and storage per partial frame would
     // be pure overhead with nothing left to display them.
-    const result = await editOpenAIImage({
-      apiKey: input.apiKey,
-      model: input.model || "gpt-image-2",
-      prompt: input.prompt,
-      size: outputSize(input.aspectRatio),
-      quality: outputQuality(input.quality),
-      image: input.photo,
-    });
+    const quality = outputQuality(input.quality);
+    const result =
+      input.provider === "google"
+        ? await editGoogleImage({
+            apiKey: input.apiKey,
+            model: input.model || "gemini-3.1-flash-image",
+            prompt: input.prompt,
+            aspectRatio: input.aspectRatio,
+            quality,
+            image: input.photo,
+          })
+        : await editOpenAIImage({
+            apiKey: input.apiKey,
+            model: input.model || "gpt-image-2",
+            prompt: input.prompt,
+            size: outputSize(input.aspectRatio),
+            quality,
+            image: input.photo,
+          });
 
-    // OpenAI returns lossless PNG, which at "high" quality can run into
-    // the tens of MB for a real (non-trivial) photo — re-encoding to
-    // WebP keeps this the customer's actual deliverable at the same
-    // visual quality, just far smaller (see compressGeneratedImage).
+    // Re-encode the provider's output to WebP to keep the customer's
+    // deliverable small while preserving visual quality.
     const compressedResult = await compressGeneratedImage(result.image.bytes, 85);
 
     await prisma.styleAsset.create({
@@ -287,7 +298,9 @@ async function runCustomerGeneration(input: {
         : "Image generation failed unexpectedly.";
 
     const errorCode =
-      error instanceof OpenAIImageError ? error.code : "generation_failed";
+      error instanceof OpenAIImageError || error instanceof GoogleImageError
+        ? error.code
+        : "generation_failed";
 
     try {
       await markGenerationFailed(input.shop, input.generationId, {
